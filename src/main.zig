@@ -104,7 +104,23 @@ const REGInstruction = packed struct {
 };
 const MEMAAddressComputationKind = enum(u1) {
     Offset = 0,
-    @"(abase)+offset",
+    @"(abase)+offset" = 1,
+};
+const MEMBAddressComputationKind = enum(u4) {
+    @"(abase)" = 0b0100,
+    @"(IP)+displacement+8" = 0b0101,
+    @"(abase)+(index)*2^scale" = 0b0111,
+    displacement = 0b1100,
+    @"(abase)+displacement" = 0b1101,
+    @"(index)*2^scale+displacement" = 0b1110,
+    @"(abase)+(index)*2^scale+displacement" = 0b1111,
+
+    pub fn usesOptionalDisplacement(self: MEMBAddressComputationKind) bool {
+        return switch (self) {
+            MEMBAddressComputationKind.@"(abase)+displacement", MEMBAddressComputationKind.@"(index)*2^scale+displacement", MEMBAddressComputationKind.@"(abase)+(index)*2^scale+displacement", MEMBAddressComputationKind.displacement, MEMBAddressComputationKind.@"(IP)+displacement+8" => true,
+            else => false,
+        };
+    }
 };
 const MEMAInstruction = packed struct {
     offset: u12,
@@ -193,4 +209,8 @@ test "simple cobr test" {
     try expect(!x.m1);
     try expect(x.src1 == 4);
     try expect(x.src2 == 5);
+}
+
+test "MEMBFormat tests" {
+    try expect(MEMBAddressComputationKind.displacement.usesOptionalDisplacement());
 }
