@@ -1,7 +1,6 @@
 const std = @import("std");
 const expect = std.testing.expect;
 const Operand = u5;
-const DecodedOpcode = u12;
 
 const ByteInteger = i8;
 const ByteOrdinal = u8;
@@ -19,7 +18,7 @@ const Real = f32;
 const LongReal = f64;
 const ExtendedReal = f80;
 
-const Opcodes = enum(u12) {
+const DecodedOpcode = enum(u12) {
     b = 0x8,
     call,
     ret,
@@ -64,11 +63,64 @@ const Opcodes = enum(u12) {
     cmpibne,
     cmpible,
     cmpibo,
+    ldob = 0x80,
+    stob = 0x82,
+    bx = 0x84,
+    balx = 0x85,
+    callx = 0x86,
+    ldos = 0x88,
+    stos = 0x8a,
+    lda = 0x8c,
+    ld = 0x90,
+    st = 0x92,
+    ldl = 0x98,
+    stl = 0x9a,
+    ldt = 0xa0,
+    stt = 0xa2,
+    ldq = 0xb0,
+    stq = 0xb2,
+    ldib = 0xc0,
+    stib = 0xc2,
+    ldis = 0xc8,
+    stis = 0xca,
+    notbit = 0x580,
+    @"and" = 0x581,
+    andnot = 0x582,
+    setbit,
+    notand,
+    xor = 0x586,
+    @"or",
+    nor,
+    xnor,
+    not,
+    ornot,
+    clrbit,
+    notor,
+    nand,
+    alterbit,
+    addo,
+    addi,
+    subo,
+    subi,
+    shro = 0x598,
+    shrdi = 0x59a,
+    shri,
+    shlo,
+    rotate,
+    shli,
+    cmpo = 0x5a0,
+    cmpi,
+    concmpo,
+    concmpi,
+    cmpinco,
+    cmpinci,
+    cmpdeco,
+    cmpdeci,
+    scanbyte = 0x5ac,
+    chkbit = 0x5ae,
+    addc = 0x5b0,
+    subc = 0x5b2,
 };
-
-test "Opcodes Sanity Checks" {
-    try expect(@intFromEnum(Opcodes.cmpibo) == 0x3f);
-}
 
 const CTRLInstruction = packed struct {
     displacement: i24,
@@ -79,7 +131,7 @@ const CTRLInstruction = packed struct {
         return @as(i24, @bitCast(bits));
     }
     pub fn getOpcode(self: *const CTRLInstruction) DecodedOpcode {
-        return @bitCast(self.opcode);
+        return @enumFromInt(self.opcode);
     }
 };
 
@@ -98,7 +150,7 @@ const COBRInstruction = packed struct {
         return self.m1;
     }
     pub fn getOpcode(self: *const COBRInstruction) DecodedOpcode {
-        return @bitCast(self.opcode);
+        return @enumFromInt(self.opcode);
     }
 };
 
@@ -120,11 +172,10 @@ const REGInstruction = packed struct {
         return self.m2;
     }
     pub fn getOpcode(self: *const REGInstruction) DecodedOpcode {
-        var major: DecodedOpcode = @as(DecodedOpcode, self.opcode);
+        var major: u12 = @as(u12, self.opcode);
         major <<= 4;
-        const minor: DecodedOpcode = self.opcodeExt;
-
-        return major | minor;
+        const minor: u12 = self.opcodeExt;
+        return @enumFromInt(major | minor);
     }
 };
 const MEMAAddressComputationKind = enum(u1) {
@@ -161,7 +212,7 @@ const MEMAInstruction = packed struct {
     opcode: u8,
 
     pub fn getOpcode(self: *const MEMAInstruction) DecodedOpcode {
-        return self.opcode;
+        return @enumFromInt(self.opcode);
     }
 
     pub fn getOffset(self: *const MEMAInstruction) u12 {
@@ -183,7 +234,7 @@ const MEMBInstruction = packed struct {
     opcode: u8,
 
     pub fn getOpcode(self: *const MEMBInstruction) DecodedOpcode {
-        return self.opcode;
+        return @enumFromInt(self.opcode);
     }
     pub fn usesOptionalDisplacement(self: *const MEMBInstruction) bool {
         return self.mode.usesOptionalDisplacement();
@@ -238,6 +289,16 @@ const Instruction = union(enum) {
     reg: REGInstruction,
     mema: MEMAInstruction,
     memb: MEMBInstruction,
+
+    pub fn getOpcode(self: *const Instruction) DecodedOpcode {
+        return switch (self.*) {
+            .ctrl => |k| k.getOpcode(),
+            .cobr => |k| k.getOpcode(),
+            .reg => |k| k.getOpcode(),
+            .mema => |k| k.getOpcode(),
+            .memb => |k| k.getOpcode(),
+        };
+    }
 };
 
 fn decode(opcode: Ordinal) Instruction {
@@ -286,7 +347,7 @@ test "simple reg test" {
         .srcDest = 7,
         .opcode = 0x58,
     };
-    try expect(x.getOpcode() == 0x582);
+    try expect(@intFromEnum(x.getOpcode()) == 0x582);
     try expect(x.srcDest == 7);
     try expect(x.src2 == 8);
     try expect(x.src1 == 9);
@@ -296,7 +357,8 @@ test "simple ctrl test" {
         .displacement = 0xFDEC,
         .opcode = 0x8,
     };
-    try expect(x.opcode == 0x8);
+    try expect(@intFromEnum(x.getOpcode()) == 0x8);
+    try expect(x.getOpcode() == DecodedOpcode.b);
     try expect(x.getDisplacement() == 0xFDEC);
 }
 
@@ -308,7 +370,8 @@ test "simple ctrl test2" {
 
     x.displacement = 0xFDEC;
     x.opcode = 0x08;
-    try expect(x.opcode == 0x8);
+    try expect(@intFromEnum(x.getOpcode()) == 0x8);
+    try expect(x.getOpcode() == DecodedOpcode.b);
     try expect(x.getDisplacement() == 0xFDEC);
 }
 
@@ -357,4 +420,14 @@ test "instruction decoder test 2" {
         .mema => true,
         else => false,
     });
+}
+
+test "Opcodes Sanity Checks" {
+    try expect(@intFromEnum(DecodedOpcode.cmpibo) == 0x3f);
+}
+
+test "Opcodes Sanity Checks 2" {
+    const originalValue: u32 = 0x3f00_0000;
+    const decodedInstruction = decode(originalValue);
+    try expect(decodedInstruction.getOpcode() == DecodedOpcode.cmpibo);
 }
