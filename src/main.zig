@@ -1,4 +1,5 @@
 const std = @import("std");
+const meta = @import("std").meta;
 const expect = std.testing.expect;
 const Operand = u5;
 
@@ -85,8 +86,8 @@ const DecodedOpcode = enum(u12) {
     stis = 0xca,
     notbit = 0x580,
     @"and" = 0x581,
-    andnot = 0x582,
-    setbit,
+    //andnot = 0x582,
+    setbit = 0x583,
     notand,
     xor = 0x586,
     @"or",
@@ -130,8 +131,8 @@ const CTRLInstruction = packed struct {
         const bits = @as(u24, @bitCast(self.displacement)) & 0xFFFFFC;
         return @as(i24, @bitCast(bits));
     }
-    pub fn getOpcode(self: *const CTRLInstruction) DecodedOpcode {
-        return @enumFromInt(self.opcode);
+    pub fn getOpcode(self: *const CTRLInstruction) !DecodedOpcode {
+        return meta.intToEnum(DecodedOpcode, self.opcode) catch error.IllegalOpcode;
     }
 };
 
@@ -149,8 +150,8 @@ const COBRInstruction = packed struct {
     pub fn treatSrc1AsLiteral(self: *const COBRInstruction) bool {
         return self.m1;
     }
-    pub fn getOpcode(self: *const COBRInstruction) DecodedOpcode {
-        return @enumFromInt(self.opcode);
+    pub fn getOpcode(self: *const COBRInstruction) !DecodedOpcode {
+        return meta.intToEnum(DecodedOpcode, self.opcode) catch error.IllegalOpcode;
     }
 };
 
@@ -171,11 +172,12 @@ const REGInstruction = packed struct {
     pub fn treatSrc2AsLiteral(self: *const REGInstruction) bool {
         return self.m2;
     }
-    pub fn getOpcode(self: *const REGInstruction) DecodedOpcode {
+    pub fn getOpcode(self: *const REGInstruction) !DecodedOpcode {
         var major: u12 = @as(u12, self.opcode);
         major <<= 4;
         const minor: u12 = self.opcodeExt;
-        return @enumFromInt(major | minor);
+        //return @enumFromInt(major | minor);
+        return meta.intToEnum(DecodedOpcode, major | minor) catch error.IllegalOpcode;
     }
 };
 const MEMAAddressComputationKind = enum(u1) {
@@ -211,8 +213,8 @@ const MEMAInstruction = packed struct {
     srcDest: Operand,
     opcode: u8,
 
-    pub fn getOpcode(self: *const MEMAInstruction) DecodedOpcode {
-        return @enumFromInt(self.opcode);
+    pub fn getOpcode(self: *const MEMAInstruction) !DecodedOpcode {
+        return meta.intToEnum(DecodedOpcode, self.opcode) catch error.IllegalOpcode;
     }
 
     pub fn getOffset(self: *const MEMAInstruction) u12 {
@@ -233,8 +235,8 @@ const MEMBInstruction = packed struct {
     srcDest: Operand,
     opcode: u8,
 
-    pub fn getOpcode(self: *const MEMBInstruction) DecodedOpcode {
-        return @enumFromInt(self.opcode);
+    pub fn getOpcode(self: *const MEMBInstruction) !DecodedOpcode {
+        return meta.intToEnum(DecodedOpcode, self.opcode) catch error.IllegalOpcode;
     }
     pub fn usesOptionalDisplacement(self: *const MEMBInstruction) bool {
         return self.mode.usesOptionalDisplacement();
@@ -290,7 +292,7 @@ const Instruction = union(enum) {
     mema: MEMAInstruction,
     memb: MEMBInstruction,
 
-    pub fn getOpcode(self: *const Instruction) DecodedOpcode {
+    pub fn getOpcode(self: *const Instruction) !DecodedOpcode {
         return switch (self.*) {
             .ctrl => |k| k.getOpcode(),
             .cobr => |k| k.getOpcode(),
@@ -303,7 +305,6 @@ const Instruction = union(enum) {
 
 fn decode(opcode: Ordinal) Instruction {
     const determinant: *const InstructionDeterminant = @ptrCast(&opcode);
-
     return switch (determineInstructionClass(determinant.opcode)) {
         InstructionClass.CTRL => Instruction{
             .ctrl = @as(*const CTRLInstruction, @ptrCast(&opcode)).*,
@@ -347,18 +348,28 @@ test "simple reg test" {
         .srcDest = 7,
         .opcode = 0x58,
     };
-    try expect(@intFromEnum(x.getOpcode()) == 0x582);
+    try expect(@intFromEnum(x.getOpcode() catch |err| {
+        try expect(err == error.IllegalOpcode);
+        return;
+    }) == 0x582);
     try expect(x.srcDest == 7);
     try expect(x.src2 == 8);
     try expect(x.src1 == 9);
 }
+
 test "simple ctrl test" {
     const x = CTRLInstruction{
         .displacement = 0xFDEC,
         .opcode = 0x8,
     };
-    try expect(@intFromEnum(x.getOpcode()) == 0x8);
-    try expect(x.getOpcode() == DecodedOpcode.b);
+    try expect(@intFromEnum(x.getOpcode() catch |err| {
+        try expect(err == error.IllegalOpcode);
+        return;
+    }) == 0x08);
+    try expect(x.getOpcode() catch |err| {
+        try expect(err == error.IllegalOpcode);
+        return;
+    } == DecodedOpcode.b);
     try expect(x.getDisplacement() == 0xFDEC);
 }
 
@@ -370,8 +381,14 @@ test "simple ctrl test2" {
 
     x.displacement = 0xFDEC;
     x.opcode = 0x08;
-    try expect(@intFromEnum(x.getOpcode()) == 0x8);
-    try expect(x.getOpcode() == DecodedOpcode.b);
+    try expect(@intFromEnum(x.getOpcode() catch |err| {
+        try expect(err == error.IllegalOpcode);
+        return;
+    }) == 0x08);
+    try expect(x.getOpcode() catch |err| {
+        try expect(err == error.IllegalOpcode);
+        return;
+    } == DecodedOpcode.b);
     try expect(x.getDisplacement() == 0xFDEC);
 }
 
@@ -387,8 +404,8 @@ test "simple cobr test" {
     try expect(!x.m1);
     try expect(x.src1 == 4);
     try expect(x.src2 == 5);
-    const value: u32 = @bitCast(x);
-    std.debug.print("{x}\n", .{value});
+    //const value: u32 = @bitCast(x);
+    //std.debug.print("{x}\n", .{value});
 }
 
 test "MEMBFormat tests" {
@@ -429,5 +446,9 @@ test "Opcodes Sanity Checks" {
 test "Opcodes Sanity Checks 2" {
     const originalValue: u32 = 0x3f00_0000;
     const decodedInstruction = decode(originalValue);
-    try expect(decodedInstruction.getOpcode() == DecodedOpcode.cmpibo);
+    const value = decodedInstruction.getOpcode() catch {
+        try expect(false);
+        return;
+    };
+    try expect(value == DecodedOpcode.cmpibo);
 }
