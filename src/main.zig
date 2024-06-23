@@ -19,32 +19,6 @@ const Real = f32;
 const LongReal = f64;
 const ExtendedReal = f80;
 
-const InstructionDeterminant = packed struct {
-    unused0: u12,
-    memDeterminant: u1,
-    unused1: u13,
-    opcode: u8,
-
-    pub fn isCTRLInstruction(self: *const InstructionDeterminant) bool {
-        return self.opcode < 0x20;
-    }
-    pub fn isCOBRInstruction(self: *const InstructionDeterminant) bool {
-        return (self.opcode >= 0x20) and (self.opcode < 0x40);
-    }
-    pub fn isREGInstruction(self: *const InstructionDeterminant) bool {
-        return (self.opcode >= 0x40) and (self.opcode < 0x80);
-    }
-    pub fn isMEMInstruction(self: *const InstructionDeterminant) bool {
-        return (self.opcode >= 0x80);
-    }
-    pub fn isMEMAInstruction(self: *const InstructionDeterminant) bool {
-        return self.isMEMInstruction() and (self.memDeterminant == 0);
-    }
-    pub fn isMEMBInstruction(self: *const InstructionDeterminant) bool {
-        return self.isMEMInstruction() and (self.memDeterminant == 1);
-    }
-};
-
 const CTRLInstruction = packed struct {
     displacement: i24,
     opcode: u8,
@@ -163,6 +137,56 @@ const MEMBInstruction = packed struct {
     pub fn usesOptionalDisplacement(self: *const MEMBInstruction) bool {
         return self.mode.usesOptionalDisplacement();
     }
+};
+
+const InstructionClass = enum(u2) {
+    CTRL,
+    COBR,
+    REG,
+    MEM,
+};
+
+fn determineInstructionClass(opcode: u8) InstructionClass {
+    return switch (opcode) {
+        0x00...0x1F => InstructionClass.CTRL,
+        0x20...0x3F => InstructionClass.COBR,
+        0x40...0x7F => InstructionClass.REG,
+        0x80...0xFF => InstructionClass.MEM,
+    };
+}
+
+const InstructionDeterminant = packed struct {
+    unused0: u12,
+    memDeterminant: u1,
+    unused1: u13,
+    opcode: u8,
+
+    pub fn isCTRLInstruction(self: *const InstructionDeterminant) bool {
+        return determineInstructionClass(self.opcode) == InstructionClass.CTRL;
+    }
+    pub fn isCOBRInstruction(self: *const InstructionDeterminant) bool {
+        return determineInstructionClass(self.opcode) == InstructionClass.COBR;
+    }
+    pub fn isREGInstruction(self: *const InstructionDeterminant) bool {
+        return determineInstructionClass(self.opcode) == InstructionClass.REG;
+    }
+    pub fn isMEMInstruction(self: *const InstructionDeterminant) bool {
+        return determineInstructionClass(self.opcode) == InstructionClass.MEM;
+    }
+    pub fn isMEMAInstruction(self: *const InstructionDeterminant) bool {
+        return self.isMEMInstruction() and (self.memDeterminant == 0);
+    }
+    pub fn isMEMBInstruction(self: *const InstructionDeterminant) bool {
+        return self.isMEMInstruction() and (self.memDeterminant == 1);
+    }
+};
+
+const Instruction = union(enum) {
+    ctrl: CTRLInstruction,
+    cobr: COBRInstruction,
+    reg: REGInstruction,
+    mema: MEMAInstruction,
+    memb: MEMBInstruction,
 };
 
 pub fn main() void {
