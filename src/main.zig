@@ -62,7 +62,12 @@ const REGInstruction = packed struct {
     src2: Operand,
     srcDest: Operand,
     opcode: u8,
-
+    pub fn treatSrc1AsLiteral(self: *const REGInstruction) bool {
+        return self.m1;
+    }
+    pub fn treatSrc2AsLiteral(self: *const REGInstruction) bool {
+        return self.m2;
+    }
     pub fn getOpcode(self: *const REGInstruction) DecodedOpcode {
         var major: DecodedOpcode = @as(DecodedOpcode, self.opcode);
         major <<= 4;
