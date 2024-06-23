@@ -114,10 +114,15 @@ const MEMBAddressComputationKind = enum(u4) {
     @"(abase)+displacement" = 0b1101,
     @"(index)*2^scale+displacement" = 0b1110,
     @"(abase)+(index)*2^scale+displacement" = 0b1111,
-
     pub fn usesOptionalDisplacement(self: MEMBAddressComputationKind) bool {
         return switch (self) {
             MEMBAddressComputationKind.@"(abase)+displacement", MEMBAddressComputationKind.@"(index)*2^scale+displacement", MEMBAddressComputationKind.@"(abase)+(index)*2^scale+displacement", MEMBAddressComputationKind.displacement, MEMBAddressComputationKind.@"(IP)+displacement+8" => true,
+            else => false,
+        };
+    }
+    pub fn usesScaleField(self: MEMBAddressComputationKind) bool {
+        return switch (self) {
+            MEMBAddressComputationKind.@"(abase)+(index)*2^scale", MEMBAddressComputationKind.@"(index)*2^scale+displacement", MEMBAddressComputationKind.@"(abase)+(index)*2^scale+displacement" => true,
             else => false,
         };
     }
@@ -145,9 +150,19 @@ const MEMAInstruction = packed struct {
 
 const MEMBInstruction = packed struct {
     index: Operand,
-    unused: 2,
+    unused: u2,
     scale: u3,
-    mode: u4,
+    mode: MEMBAddressComputationKind,
+    abase: Operand,
+    srcDest: Operand,
+    opcode: u8,
+
+    pub fn getOpcode(self: *const MEMBInstruction) DecodedOpcode {
+        return self.opcode;
+    }
+    pub fn usesOptionalDisplacement(self: *const MEMBInstruction) bool {
+        return self.mode.usesOptionalDisplacement();
+    }
 };
 
 pub fn main() void {
@@ -156,9 +171,12 @@ pub fn main() void {
 
 // test cases
 test "instruction size tests" {
+    try expect(@sizeOf(Ordinal) == 4);
     try expect(@sizeOf(CTRLInstruction) == @sizeOf(Ordinal));
     try expect(@sizeOf(COBRInstruction) == @sizeOf(Ordinal));
     try expect(@sizeOf(REGInstruction) == @sizeOf(Ordinal));
+    try expect(@sizeOf(MEMAInstruction) == @sizeOf(Ordinal));
+    try expect(@sizeOf(MEMBInstruction) == @sizeOf(Ordinal));
 }
 test "simple reg test" {
     const x = REGInstruction{
