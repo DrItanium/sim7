@@ -19,6 +19,32 @@ const Real = f32;
 const LongReal = f64;
 const ExtendedReal = f80;
 
+const InstructionDeterminant = packed struct {
+    unused0: u12,
+    memDeterminant: u1,
+    unused1: u13,
+    opcode: u8,
+
+    pub fn isCTRLInstruction(self: *const InstructionDeterminant) bool {
+        return self.opcode < 0x20;
+    }
+    pub fn isCOBRInstruction(self: *const InstructionDeterminant) bool {
+        return (self.opcode >= 0x20) and (self.opcode < 0x40);
+    }
+    pub fn isREGInstruction(self: *const InstructionDeterminant) bool {
+        return (self.opcode >= 0x40) and (self.opcode < 0x80);
+    }
+    pub fn isMEMInstruction(self: *const InstructionDeterminant) bool {
+        return (self.opcode >= 0x80);
+    }
+    pub fn isMEMAInstruction(self: *const InstructionDeterminant) bool {
+        return self.isMEMInstruction() and (self.memDeterminant == 0);
+    }
+    pub fn isMEMBInstruction(self: *const InstructionDeterminant) bool {
+        return self.isMEMInstruction() and (self.memDeterminant == 1);
+    }
+};
+
 const CTRLInstruction = packed struct {
     displacement: i24,
     opcode: u8,
@@ -76,6 +102,41 @@ const REGInstruction = packed struct {
         return major | minor;
     }
 };
+const MEMAAddressComputationKind = enum(u1) {
+    Offset = 0,
+    @"(abase)+offset",
+};
+const MEMAInstruction = packed struct {
+    offset: u12,
+    determinant: u1,
+    mode: MEMAAddressComputationKind,
+    abase: Operand,
+    srcDest: Operand,
+    opcode: u8,
+
+    pub fn getOpcode(self: *const MEMAInstruction) DecodedOpcode {
+        return self.opcode;
+    }
+
+    pub fn getOffset(self: *const MEMAInstruction) u12 {
+        return self.offset;
+    }
+
+    pub fn getComputationMode(self: *const MEMAInstruction) MEMAAddressComputationKind {
+        return self.mode;
+    }
+};
+
+const MEMBInstruction = packed struct {
+    index: Operand,
+    unused: 2,
+    scale: u3,
+    mode: u4,
+};
+
+pub fn main() void {
+    std.debug.print("i960 Simulator\n", .{});
+}
 
 // test cases
 test "instruction size tests" {
@@ -132,8 +193,4 @@ test "simple cobr test" {
     try expect(!x.m1);
     try expect(x.src1 == 4);
     try expect(x.src2 == 5);
-}
-
-pub fn main() void {
-    std.debug.print("i960 Simulator\n", .{});
 }
