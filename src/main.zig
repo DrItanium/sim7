@@ -19,6 +19,57 @@ const Real = f32;
 const LongReal = f64;
 const ExtendedReal = f80;
 
+const Opcodes = enum(u12) {
+    b = 0x8,
+    call,
+    ret,
+    bal,
+    bno,
+    bg,
+    be,
+    bge,
+    bl,
+    bne,
+    ble,
+    bo,
+    faultno,
+    faultg,
+    faulte,
+    faultge,
+    faultl,
+    faultne,
+    faultle,
+    faulto,
+    testno,
+    testg,
+    teste,
+    testge,
+    testl,
+    testne,
+    testle,
+    testo,
+    bbc = 0x30,
+    cmpobg,
+    cmpobe,
+    cmpobge,
+    cmpobl,
+    cmpobne,
+    cmpoble,
+    bbs,
+    cmpibno,
+    cmpibg,
+    cmpibe,
+    cmpibge,
+    cmpibl,
+    cmpibne,
+    cmpible,
+    cmpibo,
+};
+
+test "Opcodes Sanity Checks" {
+    try expect(@intFromEnum(Opcodes.cmpibo) == 0x3f);
+}
+
 const CTRLInstruction = packed struct {
     displacement: i24,
     opcode: u8,
