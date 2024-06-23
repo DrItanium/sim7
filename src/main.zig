@@ -86,7 +86,7 @@ const DecodedOpcode = enum(u12) {
     stis = 0xca,
     notbit = 0x580,
     @"and" = 0x581,
-    //andnot = 0x582,
+    andnot = 0x582,
     setbit = 0x583,
     notand,
     xor = 0x586,
@@ -352,6 +352,10 @@ test "simple reg test" {
         try expect(err == error.IllegalOpcode);
         return;
     }) == 0x582);
+    try expect(x.getOpcode() catch |err| {
+        try expect(err == error.IllegalOpcode);
+        return;
+    } == DecodedOpcode.andnot);
     try expect(x.srcDest == 7);
     try expect(x.src2 == 8);
     try expect(x.src1 == 9);
