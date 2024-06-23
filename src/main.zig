@@ -158,7 +158,7 @@ fn determineInstructionClass(opcode: u8) InstructionClass {
 const InstructionDeterminant = packed struct {
     unused0: u12,
     memDeterminant: u1,
-    unused1: u13,
+    unused1: u11,
     opcode: u8,
 
     pub fn isCTRLInstruction(self: *const InstructionDeterminant) bool {
@@ -189,6 +189,27 @@ const Instruction = union(enum) {
     memb: MEMBInstruction,
 };
 
+fn decode(opcode: Ordinal) Instruction {
+    const determinant: *const InstructionDeterminant = @ptrCast(&opcode);
+
+    return switch (determineInstructionClass(determinant.opcode)) {
+        InstructionClass.CTRL => Instruction{
+            .ctrl = @as(*const CTRLInstruction, @ptrCast(&opcode)).*,
+        },
+        InstructionClass.COBR => Instruction{
+            .cobr = @as(*const COBRInstruction, @ptrCast(&opcode)).*,
+        },
+        InstructionClass.REG => Instruction{
+            .reg = @as(*const REGInstruction, @ptrCast(&opcode)).*,
+        },
+        InstructionClass.MEM => if (determinant.memDeterminant == 1) Instruction{
+            .memb = @as(*const MEMBInstruction, @ptrCast(&opcode)).*,
+        } else Instruction{
+            .mema = @as(*const MEMAInstruction, @ptrCast(&opcode)).*,
+        },
+    };
+}
+
 pub fn main() void {
     std.debug.print("i960 Simulator\n", .{});
 }
@@ -201,6 +222,7 @@ test "instruction size tests" {
     try expect(@sizeOf(REGInstruction) == @sizeOf(Ordinal));
     try expect(@sizeOf(MEMAInstruction) == @sizeOf(Ordinal));
     try expect(@sizeOf(MEMBInstruction) == @sizeOf(Ordinal));
+    try expect(@sizeOf(InstructionDeterminant) == @sizeOf(Ordinal));
 }
 test "simple reg test" {
     const x = REGInstruction{
@@ -251,8 +273,19 @@ test "simple cobr test" {
     try expect(!x.m1);
     try expect(x.src1 == 4);
     try expect(x.src2 == 5);
+    const value: u32 = @bitCast(x);
+    std.debug.print("{x}\n", .{value});
 }
 
 test "MEMBFormat tests" {
     try expect(MEMBAddressComputationKind.displacement.usesOptionalDisplacement());
+}
+
+test "instruction decoder test 0" {
+    const originalValue: u32 = 0x322140ff;
+
+    try expect(switch (decode(originalValue)) {
+        .cobr => true,
+        else => false,
+    });
 }
