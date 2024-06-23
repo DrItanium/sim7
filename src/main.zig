@@ -1,6 +1,7 @@
 const std = @import("std");
 const expect = std.testing.expect;
 const Operand = u5;
+const DecodedOpcode = u12;
 
 const ByteInteger = i8;
 const ByteOrdinal = u8;
@@ -26,6 +27,9 @@ const CTRLInstruction = packed struct {
         const bits = @as(u24, @bitCast(self.displacement)) & 0xFFFFFC;
         return @as(i24, @bitCast(bits));
     }
+    pub fn getOpcode(self: *const CTRLInstruction) DecodedOpcode {
+        return @bitCast(self.opcode);
+    }
 };
 
 const COBRInstruction = packed struct {
@@ -42,12 +46,53 @@ const COBRInstruction = packed struct {
     pub fn treatSrc1AsLiteral(self: *const COBRInstruction) bool {
         return self.m1;
     }
+    pub fn getOpcode(self: *const COBRInstruction) DecodedOpcode {
+        return @bitCast(self.opcode);
+    }
+};
+
+const REGInstruction = packed struct {
+    src1: Operand,
+    s1: bool = false,
+    s2: bool = false,
+    opcodeExt: u4,
+    m1: bool,
+    m2: bool,
+    m3: bool,
+    src2: Operand,
+    srcDest: Operand,
+    opcode: u8,
+
+    pub fn getOpcode(self: *const REGInstruction) DecodedOpcode {
+        var major: DecodedOpcode = @as(DecodedOpcode, self.opcode);
+        major <<= 4;
+        const minor: DecodedOpcode = self.opcodeExt;
+
+        return major | minor;
+    }
 };
 
 // test cases
 test "instruction size tests" {
     try expect(@sizeOf(CTRLInstruction) == @sizeOf(Ordinal));
     try expect(@sizeOf(COBRInstruction) == @sizeOf(Ordinal));
+    try expect(@sizeOf(REGInstruction) == @sizeOf(Ordinal));
+}
+test "simple reg test" {
+    const x = REGInstruction{
+        .src1 = 9,
+        .opcodeExt = 0x2,
+        .m1 = false,
+        .m2 = true,
+        .m3 = false,
+        .src2 = 8,
+        .srcDest = 7,
+        .opcode = 0x58,
+    };
+    try expect(x.getOpcode() == 0x582);
+    try expect(x.srcDest == 7);
+    try expect(x.src2 == 8);
+    try expect(x.src1 == 9);
 }
 test "simple ctrl test" {
     const x = CTRLInstruction{
