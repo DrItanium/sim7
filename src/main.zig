@@ -289,3 +289,21 @@ test "instruction decoder test 0" {
         else => false,
     });
 }
+
+test "instruction decoder test 1" {
+    const originalValue: u32 = 0x0800_0000;
+
+    try expect(switch (decode(originalValue)) {
+        .ctrl => true,
+        else => false,
+    });
+}
+
+test "instruction decoder test 2" {
+    const originalValue: u32 = 0x8000_0000;
+
+    try expect(switch (decode(originalValue)) {
+        .mema => true,
+        else => false,
+    });
+}
