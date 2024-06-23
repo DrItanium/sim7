@@ -1,5 +1,22 @@
 const std = @import("std");
 const expect = std.testing.expect;
+const Operand = u5;
+
+const ByteInteger = i8;
+const ByteOrdinal = u8;
+const ShortInteger = i16;
+const ShortOrdinal = u16;
+const Integer = i32;
+const Ordinal = u32;
+const LongOrdinal = u64;
+const LongInteger = i64;
+const TripleOrdinal = u96;
+const QuadOrdinal = u128;
+const Address = u32;
+
+const Real = f32;
+const LongReal = f64;
+const ExtendedReal = f80;
 
 const CTRLInstruction = packed struct {
     displacement: i24,
@@ -14,8 +31,8 @@ const CTRLInstruction = packed struct {
 const COBRInstruction = packed struct {
     displacement: i13,
     m1: bool,
-    src2: u5,
-    src1: u5,
+    src2: Operand,
+    src1: Operand,
     opcode: u8,
 
     pub fn getDisplacement(self: *const COBRInstruction) i13 {
@@ -29,8 +46,8 @@ const COBRInstruction = packed struct {
 
 // test cases
 test "instruction size tests" {
-    try expect(@sizeOf(CTRLInstruction) == @sizeOf(u32));
-    try expect(@sizeOf(COBRInstruction) == @size
+    try expect(@sizeOf(CTRLInstruction) == @sizeOf(Ordinal));
+    try expect(@sizeOf(COBRInstruction) == @sizeOf(Ordinal));
 }
 test "simple ctrl test" {
     const x = CTRLInstruction{
@@ -51,6 +68,20 @@ test "simple ctrl test2" {
     x.opcode = 0x08;
     try expect(x.opcode == 0x8);
     try expect(x.getDisplacement() == 0xFDEC);
+}
+
+test "simple cobr test" {
+    const x = COBRInstruction{
+        .displacement = 0xFF,
+        .m1 = false,
+        .src1 = 4,
+        .src2 = 5,
+        .opcode = 0x32,
+    };
+    try expect(x.getDisplacement() == 0xFC);
+    try expect(!x.m1);
+    try expect(x.src1 == 4);
+    try expect(x.src2 == 5);
 }
 
 pub fn main() void {
