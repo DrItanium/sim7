@@ -18,7 +18,27 @@ const Address = u32;
 const Real = f32;
 const LongReal = f64;
 const ExtendedReal = f80;
+const ArchitectureLevel = enum {
+    Core,
+    Numerics,
+    Protected,
+    Extended,
+};
+const InstructionClass = enum(u2) {
+    CTRL,
+    COBR,
+    REG,
+    MEM,
+};
 
+fn determineInstructionClass(opcode: u8) InstructionClass {
+    return switch (opcode) {
+        0x00...0x1F => InstructionClass.CTRL,
+        0x20...0x3F => InstructionClass.COBR,
+        0x40...0x7F => InstructionClass.REG,
+        0x80...0xFF => InstructionClass.MEM,
+    };
+}
 const DecodedOpcode = enum(u12) {
     b = 0x8,
     call,
@@ -316,6 +336,185 @@ const DecodedOpcode = enum(u12) {
     suboo = 0x7f2,
     subio = 0x7f3,
     selo = 0x7f4,
+
+    pub fn getPrimaryOpcode(self: DecodedOpcode) u8 {
+        return switch (self) {
+            0x00...0xFF => @intFromEnum(self),
+            else => @intFromEnum(self) >> 4,
+        };
+    }
+    pub fn getInstructionClass(self: DecodedOpcode) InstructionClass {
+        return comptime determineInstructionClass(self.getPrimaryOpcode());
+    }
+    pub fn getArchitectureLevel(self: DecodedOpcode) ArchitectureLevel {
+        return switch (self) {
+            DecodedOpcode.chktag,
+            DecodedOpcode.cmpm,
+            DecodedOpcode.movm,
+            DecodedOpcode.movml,
+            DecodedOpcode.movmq,
+            DecodedOpcode.cvtadr,
+            DecodedOpcode.restrict,
+            DecodedOpcode.amplify,
+            DecodedOpcode.ldcsp,
+            DecodedOpcode.ldvob,
+            DecodedOpcode.stvob,
+            DecodedOpcode.ldvos,
+            DecodedOpcode.stvos,
+            DecodedOpcode.ldv,
+            DecodedOpcode.stv,
+            DecodedOpcode.ldvl,
+            DecodedOpcode.stvl,
+            DecodedOpcode.ldvt,
+            DecodedOpcode.stvt,
+            DecodedOpcode.ldvq,
+            DecodedOpcode.stvq,
+            DecodedOpcode.ldvib,
+            DecodedOpcode.stvib,
+            DecodedOpcode.ldvis,
+            DecodedOpcode.stvis,
+            DecodedOpcode.ldm,
+            DecodedOpcode.ldvm,
+            DecodedOpcode.stm,
+            DecodedOpcode.stvm,
+            DecodedOpcode.ldml,
+            DecodedOpcode.ldvml,
+            DecodedOpcode.stml,
+            DecodedOpcode.stvml,
+            DecodedOpcode.ldmq,
+            DecodedOpcode.ldvmq,
+            DecodedOpcode.stmq,
+            DecodedOpcode.stvmq,
+            => ArchitectureLevel.Extended,
+            DecodedOpcode.cmpstr,
+            DecodedOpcode.movqstr,
+            DecodedOpcode.movstr,
+            DecodedOpcode.inspacc,
+            DecodedOpcode.ldphy,
+            DecodedOpcode.fill,
+            DecodedOpcode.condrec,
+            DecodedOpcode.receive,
+            DecodedOpcode.send,
+            DecodedOpcode.sendserv,
+            DecodedOpcode.resumprcs,
+            DecodedOpcode.schedprcs,
+            DecodedOpcode.saveprcs,
+            DecodedOpcode.condwait,
+            DecodedOpcode.wait,
+            DecodedOpcode.signal,
+            DecodedOpcode.ldtime,
+            => ArchitectureLevel.Protected,
+            DecodedOpcode.daddc,
+            DecodedOpcode.dsubc,
+            DecodedOpcode.dmovt,
+            DecodedOpcode.cvtir,
+            DecodedOpcode.cvtilr,
+            DecodedOpcode.scalerl,
+            DecodedOpcode.scaler,
+            DecodedOpcode.atanr,
+            DecodedOpcode.logepr,
+            DecodedOpcode.logr,
+            DecodedOpcode.remr,
+            DecodedOpcode.cmpor,
+            DecodedOpcode.cmpr,
+            DecodedOpcode.sqrtr,
+            DecodedOpcode.expr,
+            DecodedOpcode.logbnr,
+            DecodedOpcode.roundr,
+            DecodedOpcode.sinr,
+            DecodedOpcode.cosr,
+            DecodedOpcode.tanr,
+            DecodedOpcode.classr,
+            DecodedOpcode.atanrl,
+            DecodedOpcode.logeprl,
+            DecodedOpcode.logrl,
+            DecodedOpcode.remrl,
+            DecodedOpcode.cmporl,
+            DecodedOpcode.cmprl,
+            DecodedOpcode.sqrtrl,
+            DecodedOpcode.exprl,
+            DecodedOpcode.logbnrl,
+            DecodedOpcode.roundrl,
+            DecodedOpcode.sinrl,
+            DecodedOpcode.cosrl,
+            DecodedOpcode.tanrl,
+            DecodedOpcode.classrl,
+            DecodedOpcode.cvtri,
+            DecodedOpcode.cvtril,
+            DecodedOpcode.cvtzri,
+            DecodedOpcode.cvtzril,
+            DecodedOpcode.movr,
+            DecodedOpcode.movrl,
+            DecodedOpcode.cpysre,
+            DecodedOpcode.cpyrsre,
+            DecodedOpcode.movre,
+            DecodedOpcode.divr,
+            DecodedOpcode.mulr,
+            DecodedOpcode.subr,
+            DecodedOpcode.addr,
+            DecodedOpcode.divrl,
+            DecodedOpcode.mulrl,
+            DecodedOpcode.subrl,
+            DecodedOpcode.addrl,
+            => ArchitectureLevel.Numerics,
+            else => ArchitectureLevel.Core,
+        };
+    }
+    pub fn isFloatingPointInstruction(self: DecodedOpcode) bool {
+        return switch (self) {
+            DecodedOpcode.cvtir,
+            DecodedOpcode.cvtilr,
+            DecodedOpcode.scalerl,
+            DecodedOpcode.scaler,
+            DecodedOpcode.atanr,
+            DecodedOpcode.logepr,
+            DecodedOpcode.logr,
+            DecodedOpcode.remr,
+            DecodedOpcode.cmpor,
+            DecodedOpcode.cmpr,
+            DecodedOpcode.sqrtr,
+            DecodedOpcode.expr,
+            DecodedOpcode.logbnr,
+            DecodedOpcode.roundr,
+            DecodedOpcode.sinr,
+            DecodedOpcode.cosr,
+            DecodedOpcode.tanr,
+            DecodedOpcode.classr,
+            DecodedOpcode.atanrl,
+            DecodedOpcode.logeprl,
+            DecodedOpcode.logrl,
+            DecodedOpcode.remrl,
+            DecodedOpcode.cmporl,
+            DecodedOpcode.cmprl,
+            DecodedOpcode.sqrtrl,
+            DecodedOpcode.exprl,
+            DecodedOpcode.logbnrl,
+            DecodedOpcode.roundrl,
+            DecodedOpcode.sinrl,
+            DecodedOpcode.cosrl,
+            DecodedOpcode.tanrl,
+            DecodedOpcode.classrl,
+            DecodedOpcode.cvtri,
+            DecodedOpcode.cvtril,
+            DecodedOpcode.cvtzri,
+            DecodedOpcode.cvtzril,
+            DecodedOpcode.movr,
+            DecodedOpcode.movrl,
+            DecodedOpcode.cpysre,
+            DecodedOpcode.cpyrsre,
+            DecodedOpcode.movre,
+            DecodedOpcode.divr,
+            DecodedOpcode.mulr,
+            DecodedOpcode.subr,
+            DecodedOpcode.addr,
+            DecodedOpcode.divrl,
+            DecodedOpcode.mulrl,
+            DecodedOpcode.subrl,
+            DecodedOpcode.addrl,
+            => true,
+            else => false,
+        };
+    }
 };
 
 const CTRLInstruction = packed struct {
@@ -437,22 +636,6 @@ const MEMBInstruction = packed struct {
         return self.mode.usesOptionalDisplacement();
     }
 };
-
-const InstructionClass = enum(u2) {
-    CTRL,
-    COBR,
-    REG,
-    MEM,
-};
-
-fn determineInstructionClass(opcode: u8) InstructionClass {
-    return switch (opcode) {
-        0x00...0x1F => InstructionClass.CTRL,
-        0x20...0x3F => InstructionClass.COBR,
-        0x40...0x7F => InstructionClass.REG,
-        0x80...0xFF => InstructionClass.MEM,
-    };
-}
 
 const InstructionDeterminant = packed struct {
     unused0: u12,
