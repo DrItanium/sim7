@@ -18,3 +18,15 @@ test "simple ctrl test" {
     try expect(x.opcode == 0x8);
     try expect(x.getDisplacement() == 0xFDEC);
 }
+
+test "simple ctrl test2" {
+    var x: CTRLInstruction = .{
+        .displacement = 0,
+        .opcode = 0,
+    };
+
+    x.displacement = 0xFDEC;
+    x.opcode = 0x08;
+    try expect(x.opcode == 0x8);
+    try expect(x.getDisplacement() == 0xFDEC);
+}
