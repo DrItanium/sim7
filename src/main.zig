@@ -772,6 +772,10 @@ const ProcessorControls = packed struct {
     @"interim priority": u5,
     unused3: u10 = 0,
     @"write external priority": u1,
+
+    pub fn toWholeValue(self: *const ProcessorControls) Ordinal {
+        return @as(*Ordinal, @ptrCast(self)).*;
+    }
 };
 const IACMessage = packed struct {
     field2: u16,
@@ -803,6 +807,10 @@ const ArithmeticControls = packed struct {
     @"floating inexact mask": u1 = 0,
     @"floating-point normalizing mode": u1 = 0,
     @"floating-point rounding control": u1 = 0,
+
+    pub fn toWholeValue(self: *const ArithmeticControls) Ordinal {
+        return @as(*Ordinal, @ptrCast(self)).*;
+    }
 };
 const ProcessControls = packed struct {
     @"trace enable": u1 = 0,
@@ -819,6 +827,9 @@ const ProcessControls = packed struct {
     unused1: u1 = 0,
     priority: u5 = 0,
     @"internal state": u11 = 0,
+    pub fn toWholeValue(self: *const ProcessControls) Ordinal {
+        return @as(*Ordinal, @ptrCast(self)).*;
+    }
 };
 
 const TraceControls = packed struct {
@@ -839,6 +850,10 @@ const TraceControls = packed struct {
     @"supervisor trace event": u1 = 0,
     @"breakpoint trace event": u1 = 0,
     unused2: u8 = 0,
+
+    pub fn toWholeValue(self: *const TraceControls) Ordinal {
+        return @as(*Ordinal, @ptrCast(self)).*;
+    }
 };
 
 test "sizeof sanity check" {
