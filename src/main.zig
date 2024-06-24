@@ -268,7 +268,7 @@ pub const DecodedOpcode = enum(u12) {
     movrl = 0x6d9,
     cpysre = 0x6e2,
     cpyrsre,
-    movre = 0x6e9,
+    movre = 0x6e1, // manuals state 0x6e9 but it is actually 0x6e1 (verified with an i960 and through the GNU binutils source code)
     mulo = 0x701,
     remo = 0x708,
     divo = 0x70b,
