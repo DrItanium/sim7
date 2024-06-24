@@ -1,6 +1,7 @@
 const std = @import("std");
 const meta = @import("std").meta;
 const expect = std.testing.expect;
+const expect_eq = std.testing.expectEqual;
 const Operand = u5;
 
 const ByteInteger = i8;
@@ -743,22 +744,68 @@ const FramePointer: Operand = 31;
 fn getPFPAddress(value: Ordinal) Ordinal {
     return value & 0xFFFFFFF0;
 }
+const GenericSegmentDescriptor = packed struct {
+    reserved: u64 = 0,
+    @"base address": Ordinal = 0,
+    valid: u1 = 0,
+    @"paging method": u2 = 0,
+    @"access status": u5 = 0,
+    unused0: u10 = 0,
+    size: u6 = 0,
+    unused1: u4 = 0,
+    @"segment type": u4 = 0,
 
+    pub fn isValid(self: *const GenericSegmentDescriptor) bool {
+        return self.valid;
+    }
+};
+const FaultProcedureEntry = packed struct {
+    @"procedure address": u32 = 0,
+    @"segment selector": u32 = 0,
+    pub fn getProcedureIndex(self: *const FaultProcedureEntry) Address {
+        return self.@"procedure address" & 0xFFFF_FFFC;
+    }
+    pub fn wholeValue(self: *const FaultProcedureEntry) u64 {
+        return @as(*u64, @ptrCast(self)).*;
+    }
+};
+
+const FaultTable = packed struct {
+    @"override entry": FaultProcedureEntry,
+    @"trace fault entry": FaultProcedureEntry,
+    @"operation fault entry": FaultProcedureEntry,
+    @"arithmetic fault entry": FaultProcedureEntry,
+    @"floating-point fault entry": FaultProcedureEntry,
+    @"constraint fault entry": FaultProcedureEntry,
+    @"virtual-memory fault entry": FaultProcedureEntry,
+    @"protection fault entry": FaultProcedureEntry,
+    @"machine fault entry": FaultProcedureEntry,
+    @"structure fault entry": FaultProcedureEntry,
+    @"type fault entry": FaultProcedureEntry,
+    reserved0: u64 = 0,
+    @"process fault entry": FaultProcedureEntry,
+    @"descriptor fault entry": FaultProcedureEntry,
+    @"event fault entry": FaultProcedureEntry,
+    reserved1: u1088 = 0,
+    pub fn wholeValue(self: *const FaultProcedureEntry) u2048 {
+        return @as(*u2048, @ptrCast(self)).*;
+    }
+};
 const FaultRecord = packed struct {
-    unused: u32,
-    overrideFaultData: u96,
-    faultData: u96,
-    overrideSubType: u8,
-    unused1: u8,
-    overrideType: u8,
-    overrideFlags: u8,
-    processControls: u32,
-    arithmeticControls: u32,
-    faultSubtype: u8,
-    unused2: u8,
-    faultType: u8,
-    faultFlags: u8,
-    faultingInstructionAddress: u32,
+    unused: u32 = 0,
+    @"override fault data": u96 = 0,
+    @"fault data": u96 = 0,
+    @"override subtype": u8 = 0,
+    unused1: u8 = 0,
+    @"override type": u8 = 0,
+    @"override flags": u8 = 0,
+    @"process controls": u32,
+    @"arithmetic controls": u32,
+    @"fault subtype": u8 = 0,
+    unused2: u8 = 0,
+    @"fault type": u8 = 0,
+    @"fault flags": u8 = 0,
+    @"address of faulting instruction": u32,
 };
 const ProcessorControls = packed struct {
     unused0: u1 = 0,
@@ -856,12 +903,6 @@ const TraceControls = packed struct {
     }
 };
 
-test "sizeof sanity check" {
-    try expect(@sizeOf(ArithmeticControls) == 4);
-    try expect(@sizeOf(ProcessControls) == 4);
-    try expect(@sizeOf(TraceControls) == 4);
-}
-
 const Core = struct {
     globals: RegisterFrame,
     locals: [4]RegisterFrame,
@@ -872,6 +913,7 @@ const Core = struct {
     pc: ProcessControls,
     ac: ArithmeticControls,
     tc: TraceControls,
+    continueExecuting: bool = true,
     fn getRegister(self: *Core, index: Operand) *u32 {
         if (index > 16) {
             return &self.globals[index and 0b1111];
@@ -910,10 +952,14 @@ const Core = struct {
             else => return error.Unimplemented,
         }
     }
+    fn cycle(self: *Core) void {
+        while (self.continueExecuting) {}
+    }
 };
 
 pub fn main() void {
     std.debug.print("i960 Simulator\n", .{});
+    //var c = Core{};
 }
 
 // test cases
@@ -1048,4 +1094,11 @@ test "Opcodes Sanity Checks 2" {
 
 test "FaultRecord sanity check" {
     try expect(@sizeOf(FaultRecord) == 48);
+}
+
+test "sizeof sanity check" {
+    try expect(@sizeOf(ArithmeticControls) == 4);
+    try expect(@sizeOf(ProcessControls) == 4);
+    try expect(@sizeOf(TraceControls) == 4);
+    try expect_eq(@sizeOf(FaultTable), 256);
 }
