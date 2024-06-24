@@ -821,8 +821,30 @@ const ProcessControls = packed struct {
     @"internal state": u11 = 0,
 };
 
+const TraceControls = packed struct {
+    unused0: u1 = 0,
+    @"instruction trace mode": u1 = 0,
+    @"branch trace mode": u1 = 0,
+    @"call trace mode": u1 = 0,
+    @"return trace mode": u1 = 0,
+    @"prereturn trace mode": u1 = 0,
+    @"supervisor trace mode": u1 = 0,
+    @"breakpoint trace mode": u1 = 0,
+    unused1: u9 = 0,
+    @"instruction trace event": u1 = 0,
+    @"branch trace event": u1 = 0,
+    @"call trace event": u1 = 0,
+    @"return trace event": u1 = 0,
+    @"prereturn trace event": u1 = 0,
+    @"supervisor trace event": u1 = 0,
+    @"breakpoint trace event": u1 = 0,
+    unused2: u8 = 0,
+};
+
 test "sizeof sanity check" {
+    try expect(@sizeOf(ArithmeticControls) == 4);
     try expect(@sizeOf(ProcessControls) == 4);
+    try expect(@sizeOf(TraceControls) == 4);
 }
 
 const Core = struct {
@@ -832,6 +854,9 @@ const Core = struct {
     ip: Ordinal = 0,
     currentLocalFrame: u2 = 0,
     advanceBy: u3 = 4,
+    pc: ProcessControls,
+    ac: ArithmeticControls,
+    tc: TraceControls,
     fn getRegister(self: *Core, index: Operand) *u32 {
         if (index > 16) {
             return &self.globals[index and 0b1111];
