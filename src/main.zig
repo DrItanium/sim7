@@ -18,6 +18,15 @@ const Address = u32;
 const Real = f32;
 const LongReal = f64;
 const ExtendedReal = f80;
+fn StorageFrame(
+    comptime T: type,
+    comptime count: comptime_int,
+) type {
+    return [count]T;
+}
+
+const RegisterFrame = StorageFrame(Ordinal, 16);
+
 const ArchitectureLevel = enum {
     Core,
     Numerics,
@@ -700,6 +709,12 @@ fn decode(opcode: Ordinal) Instruction {
         },
     };
 }
+const Core = struct {
+    globals: RegisterFrame,
+    locals: [4]RegisterFrame,
+    ip: Ordinal = 0,
+    currentLocalFrame: u2 = 0,
+};
 
 pub fn main() void {
     std.debug.print("i960 Simulator\n", .{});
