@@ -524,6 +524,9 @@ pub const DecodedOpcode = enum(u12) {
             else => false,
         };
     }
+    fn getConditionCode(self: DecodedOpcode) u3 {
+        return self.getPrimaryOpcode() and 0b111;
+    }
 };
 const CTRLInstruction = packed struct {
     displacement: i24,
@@ -901,7 +904,8 @@ const TraceControls = packed struct {
         return @as(*Ordinal, @ptrCast(self)).*;
     }
 };
-
+// there really isn't a point in keeping the instruction processing within the
+// Core structure
 const Core = struct {
     globals: RegisterFrame,
     locals: [4]RegisterFrame,
@@ -913,48 +917,63 @@ const Core = struct {
     ac: ArithmeticControls,
     tc: TraceControls,
     continueExecuting: bool = true,
-    fn getRegister(self: *Core, index: Operand) *u32 {
+    fn getRegister(self: *Core, index: Operand) *Ordinal {
         if (index > 16) {
             return &self.globals[index and 0b1111];
         } else {
             return &self.locals[self.currentLocalFrame][index and 0b1111];
         }
     }
-    fn getRegisterValue(self: *Core, index: Operand) u32 {
+    fn setRegisterValue(self: *Core, index: Operand, value: Ordinal) void {
+        self.getRegister(index).* = value;
+    }
+    fn getRegisterValue(self: *Core, index: Operand) Ordinal {
         return self.getRegister(index).*;
     }
-    fn processInstruction(self: *Core, instruction: Instruction) !void {
-        switch (instruction.getOpcode() catch |x| {
-            return x;
-        }) {
-            DecodedOpcode.b => {
-                self.advanceBy = 0;
-                self.ip += instruction.ctrl.getDisplacement();
-            },
-            DecodedOpcode.bal => {
-                self.advanceBy = 0;
-                self.getRegister(LinkRegister).* = (self.ip + 4);
-                self.ip += instruction.ctrl.getDisplacement();
-            },
-            DecodedOpcode.addo => {
-                const dest = instruction.getSrcDest() catch |x| {
-                    return x;
-                };
-                const src1 = instruction.getSrc1() catch |x| {
-                    return x;
-                };
-                const src2 = instruction.getSrc2() catch |x| {
-                    return x;
-                };
-                self.getRegister(dest).* = self.getRegisterValue(src2) + self.getRegisterValue(src1);
-            },
-            else => return error.Unimplemented,
-        }
-    }
-    fn cycle(self: *Core) void {
-        while (self.continueExecuting) {}
+    fn relativeBranch(self: *Core, displacement: i24) void {
+        self.advanceBy = 0;
+        self.ip += displacement;
     }
 };
+
+fn processInstruction(core: *Core, instruction: Instruction) !void {
+    switch (instruction.getOpcode() catch |x| {
+        return x;
+    }) {
+        DecodedOpcode.b => core.relativeBranch(instruction.ctrl.getDisplacement()),
+        DecodedOpcode.call => {
+            return error.Unimplemented;
+        },
+        DecodedOpcode.ret => {
+            return error.Unimplemented;
+        },
+        DecodedOpcode.bal => {
+            core.setRegister(LinkRegister, core.ip + core.advanceBy);
+            core.relativeBranch(instruction.ctrl.getDisplacement());
+        },
+        DecodedOpcode.bno => {
+            if (core.ac.@"condition code" == 0b000) {
+                core.relativeBranch(instruction.ctrl.getDisplacement());
+            }
+        },
+        DecodedOpcode.bg,
+        DecodedOpcode.be,
+        DecodedOpcode.bge,
+        DecodedOpcode.bl,
+        DecodedOpcode.bne,
+        DecodedOpcode.ble,
+        DecodedOpcode.bo,
+        => |opcode| {
+            if ((opcode.getConditionCode() and core.ac.@"condition code") != 0) {
+                core.relativeBranch(instruction.ctrl.getDisplacement());
+            }
+        },
+        else => return error.Unimplemented,
+    }
+}
+fn cycle(core: *Core) void {
+    while (core.continueExecuting) {}
+}
 
 pub fn main() void {
     std.debug.print("i960 Simulator\n", .{});
