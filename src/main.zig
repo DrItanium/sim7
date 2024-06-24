@@ -688,6 +688,32 @@ const Instruction = union(enum) {
             .memb => |k| k.getOpcode(),
         };
     }
+    pub fn getSrcDest(self: *const Instruction) !Operand {
+        return switch (self.*) {
+            .reg => |k| k.srcDest,
+            .mema => |k| k.srcDest,
+            .memb => |k| k.srcDest,
+            else => error.NoArgument,
+        };
+    }
+    pub fn getSrc1(self: *const Instruction) !Operand {
+        return switch (self.*) {
+            .reg => |k| k.src1,
+            .mema => |k| k.src1,
+            .memb => |k| k.src1,
+            .cobr => |k| k.src1,
+            else => error.NoArgument,
+        };
+    }
+    pub fn getSrc2(self: *const Instruction) !Operand {
+        return switch (self.*) {
+            .reg => |k| k.src2,
+            .mema => |k| k.src2,
+            .memb => |k| k.src2,
+            .cobr => |k| k.src2,
+            else => error.NoArgument,
+        };
+    }
 };
 
 fn decode(opcode: Ordinal) Instruction {
@@ -709,11 +735,81 @@ fn decode(opcode: Ordinal) Instruction {
         },
     };
 }
+const PFP: Operand = 0;
+const SP: Operand = 1;
+const RIP: Operand = 2;
+const LinkRegister: Operand = 30; // g14
+const FramePointer: Operand = 31;
+fn getPFPAddress(value: Ordinal) Ordinal {
+    return value & 0xFFFFFFF0;
+}
+
+const FaultRecord = packed struct {
+    unused: u32,
+    overrideFaultData: u96,
+    faultData: u96,
+    overrideSubType: u8,
+    unused1: u8,
+    overrideType: u8,
+    overrideFlags: u8,
+    processControls: u32,
+    arithmeticControls: u32,
+    faultSubtype: u8,
+    unused2: u8,
+    faultType: u8,
+    faultFlags: u8,
+    faultingInstructionAddress: u32,
+};
+
+test "FaultRecord sanity check" {
+    try expect(@sizeOf(FaultRecord) == 48);
+}
+
 const Core = struct {
     globals: RegisterFrame,
     locals: [4]RegisterFrame,
+    fpr: [4]ExtendedReal,
     ip: Ordinal = 0,
     currentLocalFrame: u2 = 0,
+    advanceBy: u3 = 4,
+    fn getRegister(self: *Core, index: Operand) *u32 {
+        if (index > 16) {
+            return &self.globals[index and 0b1111];
+        } else {
+            return &self.locals[self.currentLocalFrame][index and 0b1111];
+        }
+    }
+    fn getRegisterValue(self: *Core, index: Operand) u32 {
+        return self.getRegister(index).*;
+    }
+    fn processInstruction(self: *Core, instruction: Instruction) !void {
+        switch (instruction.getOpcode() catch |x| {
+            return x;
+        }) {
+            DecodedOpcode.b => {
+                self.advanceBy = 0;
+                self.ip += instruction.ctrl.getDisplacement();
+            },
+            DecodedOpcode.bal => {
+                self.advanceBy = 0;
+                self.getRegister(LinkRegister).* = (self.ip + 4);
+                self.ip += instruction.ctrl.getDisplacement();
+            },
+            DecodedOpcode.addo => {
+                const dest = instruction.getSrcDest() catch |x| {
+                    return x;
+                };
+                const src1 = instruction.getSrc1() catch |x| {
+                    return x;
+                };
+                const src2 = instruction.getSrc2() catch |x| {
+                    return x;
+                };
+                self.getRegister(dest).* = self.getRegisterValue(src2) + self.getRegisterValue(src1);
+            },
+            else => return error.Unimplemented,
+        }
+    }
 };
 
 pub fn main() void {
