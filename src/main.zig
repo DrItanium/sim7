@@ -972,7 +972,13 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
     }
 }
 fn cycle(core: *Core) void {
-    while (core.continueExecuting) {}
+    while (core.continueExecuting) {
+        core.advanceBy = 4;
+
+        if (core.advanceBy > 0) {
+            core.ip += core.advanceBy;
+        }
+    }
 }
 
 pub fn main() void {
