@@ -760,9 +760,69 @@ const FaultRecord = packed struct {
     faultFlags: u8,
     faultingInstructionAddress: u32,
 };
+const ProcessorControls = packed struct {
+    unused0: u1 = 0,
+    @"multiprocessor preempt": u1,
+    state: u2,
+    unused1: u1 = 0,
+    @"nonpreempt limit": u5,
+    @"addressing mode": u1,
+    @"check dispatch port": u1,
+    unused2: u5 = 0,
+    @"interim priority": u5,
+    unused3: u10 = 0,
+    @"write external priority": u1,
+};
+const IACMessage = packed struct {
+    field2: u16,
+    field1: u8,
+    messageType: u8,
+    field3: u32,
+    field4: u32,
+    field5: u32,
+};
+const ArithmeticControls = packed struct {
+    @"condition code": u3 = 0,
+    @"arithmetic status": u4 = 0,
+    unused0: u1 = 0,
+    @"integer overflow flag": u1 = 0,
+    unused1: u3 = 0,
+    @"integer overflow mask": u1 = 0,
+    unused2: u2 = 0,
+    @"no imprecise faults": u1 = 0,
+    @"floating overflow flag": u1 = 0,
+    @"floating underflow flag": u1 = 0,
+    @"floating invalid-op flag": u1 = 0,
+    @"floating zero-divide flag": u1 = 0,
+    @"floating inexact flag": u1 = 0,
+    unused3: u3 = 0,
+    @"floating overflow mask": u1 = 0,
+    @"floating underflow mask": u1 = 0,
+    @"floating invalid-op mask": u1 = 0,
+    @"floating zero-divide mask": u1 = 0,
+    @"floating inexact mask": u1 = 0,
+    @"floating-point normalizing mode": u1 = 0,
+    @"floating-point rounding control": u1 = 0,
+};
+const ProcessControls = packed struct {
+    @"trace enable": u1 = 0,
+    @"execution mode": u1 = 0,
+    unused0: u4 = 0,
+    @"time-slice reschedule": u1 = 0,
+    @"time-slice": u1 = 0,
+    timing: u1 = 0,
+    @"resume": u1 = 0,
+    @"trace-fault pending": u1 = 0,
+    preempt: u1 = 0,
+    refault: u1 = 0,
+    state: u2 = 0,
+    unused1: u1 = 0,
+    priority: u5 = 0,
+    @"internal state": u11 = 0,
+};
 
-test "FaultRecord sanity check" {
-    try expect(@sizeOf(FaultRecord) == 48);
+test "sizeof sanity check" {
+    try expect(@sizeOf(ProcessControls) == 4);
 }
 
 const Core = struct {
@@ -944,4 +1004,8 @@ test "Opcodes Sanity Checks 2" {
         return;
     };
     try expect(value == DecodedOpcode.cmpibo);
+}
+
+test "FaultRecord sanity check" {
+    try expect(@sizeOf(FaultRecord) == 48);
 }
