@@ -949,11 +949,11 @@ const Core = struct {
         self.setRegisterValue(dest, self.getRegisterValue(src));
     }
 };
-
+fn computeBitpos(position: u5) Ordinal {
+    return 1 << position;
+}
 fn processInstruction(core: *Core, instruction: Instruction) !void {
-    switch (instruction.getOpcode() catch |x| {
-        return x;
-    }) {
+    switch (try instruction.getOpcode()) {
         DecodedOpcode.b => core.relativeBranch(instruction.ctrl.getDisplacement()),
         DecodedOpcode.call => {
             // wait for any uncompleted instructions to finish
@@ -1008,6 +1008,46 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
         => |opcode| {
             if ((opcode.getConditionCode() and core.ac.@"condition code") != 0) {
                 return error.ConstraintRangeFault;
+            }
+        },
+        DecodedOpcode.testno => core.setRegisterValue(instruction.getSrc1() catch unreachable, if (core.ac.@"condition code" == 0b000) 1 else 0),
+        DecodedOpcode.teste,
+        DecodedOpcode.testne,
+        DecodedOpcode.testl,
+        DecodedOpcode.testle,
+        DecodedOpcode.testg,
+        DecodedOpcode.testge,
+        DecodedOpcode.testo,
+        => |opcode| core.setRegisterValue(instruction.getSrc1() catch unreachable, if ((core.ac.@"condition code" and opcode.getConditionCode()) != 0) 1 else 0),
+        DecodedOpcode.bbc => {
+            // branch if bit clear
+            const displacement = instruction.cobr.getDisplacement();
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const bitpos: Ordinal = computeBitpos((if (instruction.cobr.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) and 0b11111); // bitpos mod 32
+            const src = core.getRegisterValue(src2Index);
+            if ((src and bitpos) == 0) {
+                core.ac.@"condition code" = 0b010;
+                core.relativeBranch(displacement);
+                // resume execution at the new ip
+            } else {
+                core.ac.@"condition code" = 0b000;
+            }
+        },
+
+        DecodedOpcode.bbs => {
+            // branch if bit set
+            const displacement = instruction.cobr.getDisplacement();
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const bitpos: Ordinal = computeBitpos((if (instruction.cobr.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) and 0b11111); // bitpos mod 32
+            const src = core.getRegisterValue(src2Index);
+            if ((src and bitpos) != 0) {
+                core.ac.@"condition code" = 0b010;
+                core.relativeBranch(displacement);
+                // resume execution at the new ip
+            } else {
+                core.ac.@"condition code" = 0b000;
             }
         },
         else => return error.Unimplemented,
