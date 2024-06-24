@@ -743,6 +743,7 @@ const SP: Operand = 1;
 const RIP: Operand = 2;
 const LinkRegister: Operand = 30; // g14
 const FramePointer: Operand = 31;
+const FP = FramePointer;
 fn getPFPAddress(value: Ordinal) Ordinal {
     return value & 0xFFFFFFF0;
 }
@@ -934,6 +935,19 @@ const Core = struct {
         self.advanceBy = 0;
         self.ip += displacement;
     }
+    fn saveReturnAddress(self: *Core, dest: Operand) void {
+        self.setRegisterValue(dest, self.ip + self.advanceBy);
+    }
+    fn newLocalRegisterFrame(self: *Core) void {
+        // if registerSetAvailable
+        // then allocate as new frame
+        // else save a register set in memory at its FP; allocate as new frame
+        _ = self;
+        // @todo implement
+    }
+    fn moveRegisterValue(self: *Core, dest: Operand, src: Operand) void {
+        self.setRegisterValue(dest, self.getRegisterValue(src));
+    }
 };
 
 fn processInstruction(core: *Core, instruction: Instruction) !void {
@@ -942,7 +956,17 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
     }) {
         DecodedOpcode.b => core.relativeBranch(instruction.ctrl.getDisplacement()),
         DecodedOpcode.call => {
-            return error.Unimplemented;
+            // wait for any uncompleted instructions to finish
+            const temp = core.getRegisterValue(SP) + 63 and ~63; // round to next boundary
+            // save the return address to RIP in the _current_ frame
+            core.saveReturnAddress(RIP);
+            core.newLocalRegisterFrame();
+            // at this point, all local register references are to the new
+            // frame
+            core.relativeBranch(instruction.ctrl.getDisplacement());
+            core.moveRegisterValue(PFP, FP);
+            core.setRegisterValue(FP, temp);
+            core.setRegisterValue(SP, temp + 64);
         },
         DecodedOpcode.ret => {
             return error.Unimplemented;
@@ -966,6 +990,24 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
         => |opcode| {
             if ((opcode.getConditionCode() and core.ac.@"condition code") != 0) {
                 core.relativeBranch(instruction.ctrl.getDisplacement());
+            }
+        },
+
+        DecodedOpcode.faultno => {
+            if (core.ac.@"condition code" == 0) {
+                return error.ConstraintRangeFault;
+            }
+        },
+        DecodedOpcode.faultg,
+        DecodedOpcode.faulte,
+        DecodedOpcode.faultge,
+        DecodedOpcode.faultl,
+        DecodedOpcode.faultne,
+        DecodedOpcode.faultle,
+        DecodedOpcode.faulto,
+        => |opcode| {
+            if ((opcode.getConditionCode() and core.ac.@"condition code") != 0) {
+                return error.ConstraintRangeFault;
             }
         },
         else => return error.Unimplemented,
