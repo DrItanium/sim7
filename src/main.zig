@@ -920,9 +920,9 @@ const Core = struct {
     continueExecuting: bool = true,
     fn getRegister(self: *Core, index: Operand) *Ordinal {
         if (index > 16) {
-            return &self.globals[index and 0b1111];
+            return &self.globals[index & 0b1111];
         } else {
-            return &self.locals[self.currentLocalFrame][index and 0b1111];
+            return &self.locals[self.currentLocalFrame][index & 0b1111];
         }
     }
     fn setRegisterValue(self: *Core, index: Operand, value: Ordinal) void {
@@ -957,7 +957,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
         DecodedOpcode.b => core.relativeBranch(instruction.ctrl.getDisplacement()),
         DecodedOpcode.call => {
             // wait for any uncompleted instructions to finish
-            const temp = core.getRegisterValue(SP) + 63 and ~63; // round to next boundary
+            const temp = (core.getRegisterValue(SP) + 63) & ~63; // round to next boundary
             // save the return address to RIP in the _current_ frame
             core.saveReturnAddress(RIP);
             core.newLocalRegisterFrame();
@@ -988,7 +988,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
         DecodedOpcode.ble,
         DecodedOpcode.bo,
         => |opcode| {
-            if ((opcode.getConditionCode() and core.ac.@"condition code") != 0) {
+            if ((opcode.getConditionCode() & core.ac.@"condition code") != 0) {
                 core.relativeBranch(instruction.ctrl.getDisplacement());
             }
         },
@@ -1006,7 +1006,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
         DecodedOpcode.faultle,
         DecodedOpcode.faulto,
         => |opcode| {
-            if ((opcode.getConditionCode() and core.ac.@"condition code") != 0) {
+            if ((opcode.getConditionCode() & core.ac.@"condition code") != 0) {
                 return error.ConstraintRangeFault;
             }
         },
@@ -1018,15 +1018,15 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
         DecodedOpcode.testg,
         DecodedOpcode.testge,
         DecodedOpcode.testo,
-        => |opcode| core.setRegisterValue(instruction.getSrc1() catch unreachable, if ((core.ac.@"condition code" and opcode.getConditionCode()) != 0) 1 else 0),
+        => |opcode| core.setRegisterValue(instruction.getSrc1() catch unreachable, if ((core.ac.@"condition code" & opcode.getConditionCode()) != 0) 1 else 0),
         DecodedOpcode.bbc => {
             // branch if bit clear
             const displacement = instruction.cobr.getDisplacement();
             const src1Index = instruction.getSrc1() catch unreachable;
             const src2Index = instruction.getSrc2() catch unreachable;
-            const bitpos: Ordinal = computeBitpos((if (instruction.cobr.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) and 0b11111); // bitpos mod 32
+            const bitpos: Ordinal = computeBitpos((if (instruction.cobr.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111); // bitpos mod 32
             const src = core.getRegisterValue(src2Index);
-            if ((src and bitpos) == 0) {
+            if ((src & bitpos) == 0) {
                 core.ac.@"condition code" = 0b010;
                 core.relativeBranch(displacement);
                 // resume execution at the new ip
@@ -1040,9 +1040,9 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const displacement = instruction.cobr.getDisplacement();
             const src1Index = instruction.getSrc1() catch unreachable;
             const src2Index = instruction.getSrc2() catch unreachable;
-            const bitpos: Ordinal = computeBitpos((if (instruction.cobr.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) and 0b11111); // bitpos mod 32
+            const bitpos: Ordinal = computeBitpos((if (instruction.cobr.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111); // bitpos mod 32
             const src = core.getRegisterValue(src2Index);
-            if ((src and bitpos) != 0) {
+            if ((src & bitpos) != 0) {
                 core.ac.@"condition code" = 0b010;
                 core.relativeBranch(displacement);
                 // resume execution at the new ip
@@ -1066,14 +1066,14 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegsterValue(src1Index);
             const src2: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegsterValue(src2Index);
             core.setRegisterValue(instruction.getSrcDest(), switch (operation) {
-                DecodedOpcode.@"and" => src2 and src1,
-                DecodedOpcode.andnot => src2 and (~src1),
-                DecodedOpcode.notand => (~src2) and src1,
-                DecodedOpcode.@"or" => src2 or src1,
-                DecodedOpcode.ornot => src2 or (~src1),
-                DecodedOpcode.notor => (~src2) or src1,
-                DecodedOpcode.nand => (~src2) or (~src1),
-                DecodedOpcode.nor => (~src2) and (~src1),
+                DecodedOpcode.@"and" => src2 & src1,
+                DecodedOpcode.andnot => src2 & (~src1),
+                DecodedOpcode.notand => (~src2) & src1,
+                DecodedOpcode.@"or" => src2 | src1,
+                DecodedOpcode.ornot => src2 | (~src1),
+                DecodedOpcode.notor => (~src2) | src1,
+                DecodedOpcode.nand => (~src2) | (~src1),
+                DecodedOpcode.nor => (~src2) & (~src1),
                 DecodedOpcode.xor => src2 ^ src1,
                 DecodedOpcode.xnor => ~(src2 ^ src1),
             });
@@ -1090,13 +1090,32 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const mask: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegsterValue(src1Index);
             const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegsterValue(src2Index);
             const srcDest = core.getRegisterValue(srcDestIndex);
-            core.setRegisterValue(srcDestIndex, (src and mask) or (srcDest and (~mask)));
+            core.setRegisterValue(srcDestIndex, modify(mask, src, srcDest));
+        },
+        DecodedOpcode.alterbit => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const bitpos: Ordinal = computeBitpos((if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) and 0b11111); // bitpos mod 32
+            const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegsterValue(src2Index);
+            core.setRegisterValue(instruction.getSrcDest(), alterbit(src, bitpos, (core.ac.@"condition code" & 0b010) == 0));
         },
         DecodedOpcode.syncf => {
             // do nothing
         },
         else => return error.Unimplemented,
     }
+}
+fn modify(mask: Ordinal, src: Ordinal, srcDest: Ordinal) Ordinal {
+    return (src & mask) | (srcDest & (~mask));
+}
+fn alterbit(src: Ordinal, bitpos: Ordinal, clearBit: bool) Ordinal {
+    return if (clearBit) (src & (~bitpos)) else (src | bitpos);
+}
+test "alterbit logic" {
+    try expect_eq(alterbit(0, (1 << 24), false), 0x0100_0000);
+}
+test "modify logic" {
+    try expect_eq(modify(0xFF, 0xFFFF, 0), 0xFF);
 }
 fn cycle(core: *Core) void {
     while (core.continueExecuting) {
