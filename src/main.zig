@@ -1,5 +1,6 @@
 const std = @import("std");
 const meta = @import("std").meta;
+const math = @import("std").math;
 const expect = std.testing.expect;
 const expect_eq = std.testing.expectEqual;
 pub const Operand = u5;
@@ -1158,6 +1159,36 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
                 core.moveRegisterValue(instruction.getSrcDest() + 3, src1Index + 3);
             }
         },
+        DecodedOpcode.mulo => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegsterValue(src1Index);
+            const src2: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegsterValue(src2Index);
+            core.setRegisterValue(instruction.getSrcDest(), src2 *% src1);
+        },
+        DecodedOpcode.muli => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const src1: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegsterValue(src1Index));
+            const src2: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src1Index else core.getRegsterValue(src2Index));
+            // support detecting integer overflow here
+            core.setRegisterValue(instruction.getSrcDest(), try math.mul(Integer, src2, src1));
+        },
+        DecodedOpcode.addo => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegsterValue(src1Index);
+            const src2: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegsterValue(src2Index);
+            core.setRegisterValue(instruction.getSrcDest(), src2 +% src1);
+        },
+        DecodedOpcode.addi => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const src1: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegsterValue(src1Index));
+            const src2: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src1Index else core.getRegsterValue(src2Index));
+            // support detecting integer overflow here
+            core.setRegisterValue(instruction.getSrcDest(), try math.add(Integer, src2, src1));
+        },
         else => return error.Unimplemented,
     }
 }
@@ -1172,6 +1203,15 @@ test "alterbit logic" {
 }
 test "modify logic" {
     try expect_eq(modify(0xFF, 0xFFFF, 0), 0xFF);
+}
+test "overflow test" {
+    const a: i32 = 0x7FFF_FFFF;
+    const b: i32 = 1;
+    try expect((a +% b) < 0);
+    const c: u32 = 0xFFFF_FFFF;
+    const d: u32 = 1;
+    const e = math.add(u32, c, d) catch 33;
+    try expect(e == 33);
 }
 fn cycle(core: *Core) void {
     while (core.continueExecuting) {
