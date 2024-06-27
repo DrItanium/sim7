@@ -1050,12 +1050,36 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
                 core.ac.@"condition code" = 0b000;
             }
         },
-        DecodedOpcode.@"and" => {
+        DecodedOpcode.@"and",
+        DecodedOpcode.@"or",
+        DecodedOpcode.andnot,
+        DecodedOpcode.notand,
+        DecodedOpcode.ornot,
+        DecodedOpcode.notor,
+        DecodedOpcode.nand,
+        DecodedOpcode.nor,
+        DecodedOpcode.xor,
+        DecodedOpcode.xnor,
+        => |operation| {
             const src1Index = instruction.getSrc1() catch unreachable;
             const src2Index = instruction.getSrc2() catch unreachable;
             const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegsterValue(src1Index);
             const src2: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegsterValue(src2Index);
-            core.setRegisterValue(instruction.getSrcDest(), src2 and src1);
+            core.setRegisterValue(instruction.getSrcDest(), switch (operation) {
+                DecodedOpcode.@"and" => src2 and src1,
+                DecodedOpcode.andnot => src2 and (~src1),
+                DecodedOpcode.notand => (~src2) and src1,
+                DecodedOpcode.@"or" => src2 or src1,
+                DecodedOpcode.ornot => src2 or (~src1),
+                DecodedOpcode.notor => (~src2) or src1,
+                DecodedOpcode.nand => (~src2) or (~src1),
+                DecodedOpcode.nor => (~src2) and (~src1),
+                DecodedOpcode.xor => src2 ^ src1,
+                DecodedOpcode.xnor => ~(src2 ^ src1),
+            });
+        },
+        DecodedOpcode.syncf => {
+            // do nothing
         },
         else => return error.Unimplemented,
     }
