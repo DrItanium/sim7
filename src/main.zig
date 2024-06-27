@@ -919,6 +919,15 @@ const Core = struct {
     ac: ArithmeticControls,
     tc: TraceControls,
     continueExecuting: bool = true,
+    fn newCycle(self: *Core) void {
+        self.advanceBy = 4;
+    }
+    fn nextInstruction(self: *Core) void {
+        if (self.advanceBy > 0) {
+            self.ip +%= self.advanceBy;
+            self.advanceBy = 0;
+        }
+    }
     fn getRegister(self: *Core, index: Operand) *Ordinal {
         if (index > 16) {
             return &self.globals[index & 0b1111];
@@ -1113,7 +1122,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const src1Index = instruction.getSrc1() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
             if (((src1Index & 0b1) != 0) or ((srcDestIndex & 0b1) != 0)) {
-                core.ip += core.advanceBy;
+                core.nextInstruction();
                 return error.InvalidOpcodeFault;
             }
             const srcLo = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
@@ -1126,7 +1135,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const src1Index = instruction.getSrc1() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
             if (((src1Index & 0b11) != 0) or ((srcDestIndex & 0b11) != 0)) {
-                core.ip += core.advanceBy;
+                core.nextInstruction();
                 return error.InvalidOpcodeFault;
             }
             if (instruction.reg.treatSrc1AsLiteral()) {
@@ -1144,7 +1153,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const src1Index = instruction.getSrc1() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
             if (((src1Index & 0b11) != 0) or ((srcDestIndex & 0b11) != 0)) {
-                core.ip += core.advanceBy;
+                core.nextInstruction();
                 return error.InvalidOpcodeFault;
             }
             if (instruction.reg.treatSrc1AsLiteral()) {
@@ -1172,7 +1181,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const src1: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegsterValue(src1Index));
             const src2: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src1Index else core.getRegsterValue(src2Index));
             // support detecting integer overflow here
-            core.setRegisterValue(instruction.getSrcDest(), try math.mul(Integer, src2, src1));
+            core.setRegisterValue(instruction.getSrcDest(), @bitCast(try math.mul(Integer, src2, src1)));
         },
         DecodedOpcode.addo => {
             const src1Index = instruction.getSrc1() catch unreachable;
@@ -1187,7 +1196,31 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const src1: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegsterValue(src1Index));
             const src2: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src1Index else core.getRegsterValue(src2Index));
             // support detecting integer overflow here
-            core.setRegisterValue(instruction.getSrcDest(), try math.add(Integer, src2, src1));
+            core.setRegisterValue(instruction.getSrcDest(), @bitCast(try math.add(Integer, src2, src1)));
+        },
+        DecodedOpcode.divo => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const denominator: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegsterValue(src1Index);
+            const numerator: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegsterValue(src2Index);
+            core.setRegisterValue(instruction.getSrcDest(), math.divExact(Ordinal, numerator, denominator) catch |err| {
+                if (err == error.DivisionByZero) {
+                    core.nextInstruction();
+                }
+                return err;
+            });
+        },
+        DecodedOpcode.divi => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const denominator: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegsterValue(src1Index));
+            const numerator: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegsterValue(src2Index));
+            core.setRegisterValue(instruction.getSrcDest(), @bitCast(math.divExact(Integer, numerator, denominator) catch |err| {
+                if (err == error.DivisionByZero) {
+                    core.nextInstruction();
+                }
+                return err;
+            }));
         },
         else => return error.Unimplemented,
     }
@@ -1215,11 +1248,9 @@ test "overflow test" {
 }
 fn cycle(core: *Core) void {
     while (core.continueExecuting) {
-        core.advanceBy = 4;
+        core.newCycle();
 
-        if (core.advanceBy > 0) {
-            core.ip += core.advanceBy;
-        }
+        core.nextInstruction();
     }
 }
 
