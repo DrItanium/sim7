@@ -1078,6 +1078,11 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
                 DecodedOpcode.xnor => ~(src2 ^ src1),
             });
         },
+        DecodedOpcode.not => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegsterValue(src1Index);
+            core.setRegisterValue(instruction.getSrcDest(), ~src1);
+        },
         DecodedOpcode.syncf => {
             // do nothing
         },
