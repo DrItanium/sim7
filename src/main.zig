@@ -1050,6 +1050,13 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
                 core.ac.@"condition code" = 0b000;
             }
         },
+        DecodedOpcode.@"and" => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegsterValue(src1Index);
+            const src2: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegsterValue(src2Index);
+            core.setRegisterValue(instruction.getSrcDest(), src2 and src1);
+        },
         else => return error.Unimplemented,
     }
 }
