@@ -1083,6 +1083,15 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegsterValue(src1Index);
             core.setRegisterValue(instruction.getSrcDest(), ~src1);
         },
+        DecodedOpcode.modify => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            const mask: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegsterValue(src1Index);
+            const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegsterValue(src2Index);
+            const srcDest = core.getRegisterValue(srcDestIndex);
+            core.setRegisterValue(srcDestIndex, (src and mask) or (srcDest and (~mask)));
+        },
         DecodedOpcode.syncf => {
             // do nothing
         },
