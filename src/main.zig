@@ -1102,6 +1102,62 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
         DecodedOpcode.syncf => {
             // do nothing
         },
+        DecodedOpcode.mov => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegsterValue(src1Index);
+            core.setRegisterValue(instruction.getSrcDest(), src1);
+        },
+        DecodedOpcode.movl => {
+            // be as simple as possible
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            if (((src1Index & 0b1) != 0) or ((srcDestIndex & 0b1) != 0)) {
+                core.ip += core.advanceBy;
+                return error.InvalidOpcodeFault;
+            }
+            const srcLo = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
+            const srcHi = if (instruction.reg.treatSrc1AsLiteral()) 0 else core.getRegisterValue(src1Index + 1);
+            core.setRegisterValue(instruction.getSrcDest(), srcLo);
+            core.setRegisterValue(instruction.getSrcDest() + 1, srcHi);
+        },
+        DecodedOpcode.movt => {
+            // be as simple as possible
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            if (((src1Index & 0b11) != 0) or ((srcDestIndex & 0b11) != 0)) {
+                core.ip += core.advanceBy;
+                return error.InvalidOpcodeFault;
+            }
+            if (instruction.reg.treatSrc1AsLiteral()) {
+                core.setRegisterValue(instruction.getSrcDest(), src1Index);
+                core.setRegisterValue(instruction.getSrcDest() + 1, 0);
+                core.setRegisterValue(instruction.getSrcDest() + 2, 0);
+            } else {
+                core.moveRegisterValue(instruction.getSrcDest() + 0, src1Index + 0);
+                core.moveRegisterValue(instruction.getSrcDest() + 1, src1Index + 1);
+                core.moveRegisterValue(instruction.getSrcDest() + 2, src1Index + 2);
+            }
+        },
+        DecodedOpcode.movq => {
+            // be as simple as possible
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            if (((src1Index & 0b11) != 0) or ((srcDestIndex & 0b11) != 0)) {
+                core.ip += core.advanceBy;
+                return error.InvalidOpcodeFault;
+            }
+            if (instruction.reg.treatSrc1AsLiteral()) {
+                core.setRegisterValue(instruction.getSrcDest(), src1Index);
+                core.setRegisterValue(instruction.getSrcDest() + 1, 0);
+                core.setRegisterValue(instruction.getSrcDest() + 2, 0);
+                core.setRegisterValue(instruction.getSrcDest() + 3, 0);
+            } else {
+                core.moveRegisterValue(instruction.getSrcDest() + 0, src1Index + 0);
+                core.moveRegisterValue(instruction.getSrcDest() + 1, src1Index + 1);
+                core.moveRegisterValue(instruction.getSrcDest() + 2, src1Index + 2);
+                core.moveRegisterValue(instruction.getSrcDest() + 3, src1Index + 3);
+            }
+        },
         else => return error.Unimplemented,
     }
 }
