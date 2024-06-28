@@ -1082,6 +1082,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
         DecodedOpcode.shlo,
         DecodedOpcode.not,
         DecodedOpcode.addo,
+        DecodedOpcode.mov,
         => |operation| {
             const src1Index = instruction.getSrc1() catch unreachable;
             const src2Index = instruction.getSrc2() catch unreachable;
@@ -1107,6 +1108,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
                 DecodedOpcode.shlo => if (len < 32) src << @truncate(len) else 0,
                 DecodedOpcode.shro => if (len < 32) src >> @truncate(len) else 0,
                 DecodedOpcode.addo => src2 +% src1,
+                DecodedOpcode.mov => src1,
                 else => unreachable,
             });
         },
@@ -1138,12 +1140,6 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
         },
         DecodedOpcode.syncf => {
             // do nothing
-        },
-        DecodedOpcode.mov => {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
-            const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            core.setRegisterValue(srcDestIndex, src1);
         },
         DecodedOpcode.movl => {
             // be as simple as possible
