@@ -1083,7 +1083,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
             const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
             const src2: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
-            core.setRegisterValue(srcDestIndex, try switch (operation) {
+            core.setRegisterValue(srcDestIndex, switch (operation) {
                 DecodedOpcode.@"and" => src2 & src1,
                 DecodedOpcode.andnot => src2 & (~src1),
                 DecodedOpcode.notand => (~src2) & src1,
@@ -1094,7 +1094,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
                 DecodedOpcode.nor => (~src2) & (~src1),
                 DecodedOpcode.xor => src2 ^ src1,
                 DecodedOpcode.xnor => ~(src2 ^ src1),
-                else => error.Unimplemented,
+                else => unreachable,
             });
         },
         DecodedOpcode.not => {
