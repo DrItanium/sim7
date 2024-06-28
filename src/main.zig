@@ -1077,6 +1077,9 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
         DecodedOpcode.nor,
         DecodedOpcode.xor,
         DecodedOpcode.xnor,
+        DecodedOpcode.mulo,
+        DecodedOpcode.shro,
+        DecodedOpcode.shlo,
         => |operation| {
             const src1Index = instruction.getSrc1() catch unreachable;
             const src2Index = instruction.getSrc2() catch unreachable;
@@ -1094,8 +1097,20 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
                 DecodedOpcode.nor => (~src2) & (~src1),
                 DecodedOpcode.xor => src2 ^ src1,
                 DecodedOpcode.xnor => ~(src2 ^ src1),
+                DecodedOpcode.mulo => src2 *% src1,
+                DecodedOpcode.shlo => if (src1 < 32) src2 << @truncate(src1) else 0,
+                DecodedOpcode.shro => if (src1 < 32) src2 >> @truncate(src1) else 0,
                 else => unreachable,
             });
+        },
+        DecodedOpcode.muli => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            const src1: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index));
+            const src2: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src1Index else core.getRegisterValue(src2Index));
+            // support detecting integer overflow here
+            core.setRegisterValue(srcDestIndex, @bitCast(try math.mul(Integer, src2, src1)));
         },
         DecodedOpcode.not => {
             const src1Index = instruction.getSrc1() catch unreachable;
@@ -1180,23 +1195,6 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
                 core.moveRegisterValue(srcDestIndex + 3, src1Index + 3);
             }
         },
-        DecodedOpcode.mulo => {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
-            const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
-            const src2: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
-            core.setRegisterValue(srcDestIndex, src2 *% src1);
-        },
-        DecodedOpcode.muli => {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
-            const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const src1: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index));
-            const src2: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src1Index else core.getRegisterValue(src2Index));
-            // support detecting integer overflow here
-            core.setRegisterValue(srcDestIndex, @bitCast(try math.mul(Integer, src2, src1)));
-        },
         DecodedOpcode.addo => {
             const src1Index = instruction.getSrc1() catch unreachable;
             const src2Index = instruction.getSrc2() catch unreachable;
@@ -1239,23 +1237,6 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
                 }
                 return err;
             }));
-        },
-        DecodedOpcode.shro,
-        DecodedOpcode.shlo,
-        => |opcode| {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
-            const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const len: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
-            const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
-            core.setRegisterValue(srcDestIndex, if (len < 32)
-                switch (opcode) {
-                    DecodedOpcode.shlo => src << @truncate(len),
-                    DecodedOpcode.shro => src >> @truncate(len),
-                    else => unreachable,
-                }
-            else
-                0);
         },
         else => return error.Unimplemented,
     }
