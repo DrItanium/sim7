@@ -1240,6 +1240,23 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
                 return err;
             }));
         },
+        DecodedOpcode.shro,
+        DecodedOpcode.shlo,
+        => |opcode| {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            const len: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
+            const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            core.setRegisterValue(srcDestIndex, if (len < 32)
+                switch (opcode) {
+                    DecodedOpcode.shlo => src << @truncate(len),
+                    DecodedOpcode.shro => src >> @truncate(len),
+                    else => unreachable,
+                }
+            else
+                0);
+        },
         else => return error.Unimplemented,
     }
 }
