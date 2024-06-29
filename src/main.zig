@@ -1601,15 +1601,12 @@ pub fn main() !void {
     var core = Core{
         .memory = buffer,
     };
-    var prng = std.rand.DefaultPrng.init(blk: {
-        var seed: u64 = undefined;
-        try std.posix.getrandom(std.mem.asBytes(&seed));
-        break :blk seed;
-    });
-    const rand = prng.random();
+    for (buffer) |*cell| {
+        cell.* = 0;
+    }
     while (core.continueExecuting) {
         core.newCycle();
-        const result = decode(rand.int(Ordinal));
+        const result = decode(core.loadFromMemory(Ordinal, core.ip));
         processInstruction(&core, result) catch |x| {
             return x;
         };
