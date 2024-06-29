@@ -1043,9 +1043,6 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             core.setRegisterValue(FP, temp);
             core.setRegisterValue(SP, temp + 64);
         },
-        DecodedOpcode.ret => {
-            return error.Unimplemented;
-        },
         DecodedOpcode.bal => {
             core.setRegisterValue(LinkRegister, core.ip + core.advanceBy);
             core.relativeBranch(instruction.ctrl.getDisplacement());
