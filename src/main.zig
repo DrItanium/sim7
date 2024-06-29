@@ -215,20 +215,9 @@ test "memory pool load/store test" {
     buffer[9] = 0x45;
     buffer[10] = 0x67;
     buffer[11] = 0x89;
-    buffer[12] = 0x11;
-    buffer[13] = 0x22;
-    buffer[14] = 0x33;
-    buffer[15] = 0x44;
-    store(ByteOrdinal, buffer, 16, 0x55);
-    store(ByteOrdinal, buffer, 17, 0x66);
-    store(ByteOrdinal, buffer, 18, 0x77);
-    store(ByteOrdinal, buffer, 19, 0x88);
-    store(ByteOrdinal, buffer, 20, 0x99);
-    store(ByteOrdinal, buffer, 21, 0xaa);
-    store(ByteOrdinal, buffer, 22, 0xbb);
-    store(ByteOrdinal, buffer, 23, 0xcc);
-    store(ByteOrdinal, buffer, 24, 0xdd);
-    store(ByteOrdinal, buffer, 25, 0xee);
+    store(Ordinal, buffer, 12, 0x44332211);
+    store(LongOrdinal, buffer, 16, 0xccbbaa99_88776655);
+    store(ShortOrdinal, buffer, 24, 0xeedd);
     store(ByteOrdinal, buffer, 26, 0xff);
     try expect_eq(load(ByteOrdinal, buffer, 16), 0x55);
     try expect_eq(load(ByteOrdinal, buffer, 0), 0xED);
@@ -243,6 +232,7 @@ test "memory pool load/store test" {
     try expect_eq(load(TripleOrdinal, buffer, 2), 0x221189674523_01efcdab_ffff);
     try expect_eq(load(QuadOrdinal, buffer, 0), 0x44332211_89674523_01efcdab_ffffFDED);
     try expect_eq(load(QuadOrdinal, buffer, 1), 0x55443322_11896745_2301efcd_abffffFD);
+    try expect_eq(load(ShortOrdinal, buffer, 24), 0xeedd);
 }
 
 const ArchitectureLevel = enum {
