@@ -176,11 +176,20 @@ fn store(
         TripleOrdinal => {
             if ((address & 0b1111) == 0) {
                 const properView: *[]TripleOrdinal = @ptrFromInt(@intFromPtr(&pool));
-                properView.*[address >> 4] = @bitCast(value);
+                properView.*[address >> 4] = value;
             } else {
                 store(Ordinal, pool, address, @truncate(value));
                 store(Ordinal, pool, address +% 4, @truncate(value >> 32));
                 store(Ordinal, pool, address +% 8, @truncate(value >> 64));
+            }
+        },
+        QuadOrdinal => {
+            if ((address & 0b1111) == 0) {
+                const properView: *[]QuadOrdinal = @ptrFromInt(@intFromPtr(&pool));
+                properView.*[address >> 4] = value;
+            } else {
+                store(LongOrdinal, pool, address, @truncate(value));
+                store(LongOrdinal, pool, address +% 8, @truncate(value >> 64));
             }
         },
         else => @compileError("Requested type not supported!"),
@@ -189,6 +198,8 @@ fn store(
 
 test "Structure Size Check 2" {
     try expect_eq(@sizeOf(MemoryPool), (4 * 1024 * 1024 * 1024));
+}
+test "memory pool load/store test" {
     const allocator = std.heap.page_allocator;
     const buffer = try allocator.create(MemoryPool);
     defer allocator.destroy(buffer);
@@ -208,7 +219,18 @@ test "Structure Size Check 2" {
     buffer[13] = 0x22;
     buffer[14] = 0x33;
     buffer[15] = 0x44;
-    buffer[16] = 0x55;
+    store(ByteOrdinal, buffer, 16, 0x55);
+    store(ByteOrdinal, buffer, 17, 0x66);
+    store(ByteOrdinal, buffer, 18, 0x77);
+    store(ByteOrdinal, buffer, 19, 0x88);
+    store(ByteOrdinal, buffer, 20, 0x99);
+    store(ByteOrdinal, buffer, 21, 0xaa);
+    store(ByteOrdinal, buffer, 22, 0xbb);
+    store(ByteOrdinal, buffer, 23, 0xcc);
+    store(ByteOrdinal, buffer, 24, 0xdd);
+    store(ByteOrdinal, buffer, 25, 0xee);
+    store(ByteOrdinal, buffer, 26, 0xff);
+    try expect_eq(load(ByteOrdinal, buffer, 16), 0x55);
     try expect_eq(load(ByteOrdinal, buffer, 0), 0xED);
     try expect_eq(load(ByteOrdinal, buffer, 1), 0xFD);
     try expect_eq(load(ByteInteger, buffer, 2), -1);
