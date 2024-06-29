@@ -30,9 +30,19 @@ fn StorageFrame(
 const RegisterFrame = StorageFrame(Ordinal, 16);
 const Page = StorageFrame(ByteOrdinal, 4096);
 const MemoryPool = StorageFrame(Page, 1 << 20);
-test "Memory Pool Size" {
+
+// need to access byte by byte
+fn load(pool: *MemoryPool, comptime T: type, address: Address) T {
+    return switch (@typeInfo(T)) {
+        .ByteOrdinal => pool[address >> 12][address & 0xFFF],
+        else => @compileError("Requested type not allowed!"),
+    };
+}
+
+test "Structure Size Check 2" {
     try expect_eq(@sizeOf(MemoryPool), (4 * 1024 * 1024 * 1024));
 }
+
 const ArchitectureLevel = enum {
     Core,
     Numerics,
