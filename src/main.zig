@@ -37,6 +37,7 @@ fn load(
     pool: *MemoryPool,
     address: Address,
 ) T {
+    // todo, at some point we need to take platform endianness into account!
     return switch (T) {
         ByteOrdinal, ByteInteger => @bitCast(pool[address]),
         ShortOrdinal, ShortInteger => {
@@ -134,8 +135,57 @@ fn load(
         else => @compileError("Requested type not allowed!"),
     };
 }
-//fn store(pool: *MemoryPool, comptime T: type, address: Address, value : T) void {
-//}
+fn store(
+    comptime T: type,
+    pool: *MemoryPool,
+    address: Address,
+    value: T,
+) void {
+    switch (T) {
+        ByteOrdinal, ByteInteger => pool[address] = @bitCast(value),
+        ShortOrdinal, ShortInteger => {
+            const view: ShortOrdinal = @bitCast(value);
+            if ((address & 0b1) == 0) {
+                const properView: *[]ShortOrdinal = @ptrFromInt(@intFromPtr(&pool));
+                properView.*[address >> 1] = view;
+            } else {
+                pool[address] = @truncate(view);
+                pool[address +% 1] = @truncate(view >> 8);
+            }
+        },
+        Ordinal, Integer => {
+            const view: Ordinal = @bitCast(value);
+            if ((address & 0b11) == 0) {
+                const properView: *[]Ordinal = @ptrFromInt(@intFromPtr(&pool));
+                properView.*[address >> 2] = view;
+            } else {
+                store(ShortOrdinal, pool, address, @truncate(view));
+                store(ShortOrdinal, pool, address +% 2, @truncate(view >> 16));
+            }
+        },
+        LongOrdinal, LongInteger => {
+            const view: LongOrdinal = @bitCast(value);
+            if ((address & 0b111) == 0) {
+                const properView: *[]LongOrdinal = @ptrFromInt(@intFromPtr(&pool));
+                properView.*[address >> 3] = view;
+            } else {
+                store(Ordinal, pool, address, @truncate(view));
+                store(Ordinal, pool, address +% 4, @truncate(view >> 32));
+            }
+        },
+        TripleOrdinal => {
+            if ((address & 0b1111) == 0) {
+                const properView: *[]TripleOrdinal = @ptrFromInt(@intFromPtr(&pool));
+                properView.*[address >> 4] = @bitCast(value);
+            } else {
+                store(Ordinal, pool, address, @truncate(value));
+                store(Ordinal, pool, address +% 4, @truncate(value >> 32));
+                store(Ordinal, pool, address +% 8, @truncate(value >> 64));
+            }
+        },
+        else => @compileError("Requested type not supported!"),
+    }
+}
 
 test "Structure Size Check 2" {
     try expect_eq(@sizeOf(MemoryPool), (4 * 1024 * 1024 * 1024));
