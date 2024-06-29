@@ -76,7 +76,7 @@ fn load(
                 // boundaries (same as quad ordinals) so we can use the
                 // optimization only when aligned
                 const properView: *[]TripleOrdinal = @ptrFromInt(@intFromPtr(&pool));
-                return @bitCast(properView.*[address >> 4]);
+                return properView.*[address >> 4];
             } else if ((address & 0b11) == 0) {
                 // cool beans, the address is actually aligned to 32-bit
                 // boundaries so we can actually do three separate optimized
@@ -86,14 +86,49 @@ fn load(
                 const a: TripleOrdinal = properView.*[adjustedAddress +% 0];
                 const b: TripleOrdinal = properView.*[adjustedAddress +% 1];
                 const c: TripleOrdinal = properView.*[adjustedAddress +% 2];
-                return @bitCast(a | (b << 32) | (c << 64));
+                return a | (b << 32) | (c << 64);
             } else {
                 // load three separate ordinals, it may turn out that some of
                 // them are aligned actually!
                 const a: TripleOrdinal = load(Ordinal, pool, address);
                 const b: TripleOrdinal = load(Ordinal, pool, address +% 4);
                 const c: TripleOrdinal = load(Ordinal, pool, address +% 8);
-                return @bitCast(a | (b << 32) | (c << 64));
+                return a | (b << 32) | (c << 64);
+            }
+        },
+        QuadOrdinal => {
+            if ((address & 0b1111) == 0) {
+                // triple ordinals are strange as they are 96 bits in size.
+                // However, the i960 treats them as aligned only on 16 byte
+                // boundaries (same as quad ordinals) so we can use the
+                // optimization only when aligned
+                const properView: *[]QuadOrdinal = @ptrFromInt(@intFromPtr(&pool));
+                return properView.*[address >> 4];
+            } else if ((address & 0b111) == 0) {
+                const adjustedAddress = address >> 3;
+                const properView: *[]LongOrdinal = @ptrFromInt(@intFromPtr(&pool));
+                const a: QuadOrdinal = properView.*[adjustedAddress +% 0];
+                const b: QuadOrdinal = properView.*[adjustedAddress +% 1];
+                return a | (b << 64);
+            } else if ((address & 0b11) == 0) {
+                // cool beans, the address is actually aligned to 32-bit
+                // boundaries so we can actually do three separate optimized
+                // ordinal loads
+                const adjustedAddress = address >> 2;
+                const properView: *[]Ordinal = @ptrFromInt(@intFromPtr(&pool));
+                const a: QuadOrdinal = properView.*[adjustedAddress +% 0];
+                const b: QuadOrdinal = properView.*[adjustedAddress +% 1];
+                const c: QuadOrdinal = properView.*[adjustedAddress +% 2];
+                const d: QuadOrdinal = properView.*[adjustedAddress +% 3];
+                return a | (b << 32) | (c << 64) | (d << 96);
+            } else {
+                // load three separate ordinals, it may turn out that some of
+                // them are aligned actually!
+                const a: QuadOrdinal = load(Ordinal, pool, address);
+                const b: QuadOrdinal = load(Ordinal, pool, address +% 4);
+                const c: QuadOrdinal = load(Ordinal, pool, address +% 8);
+                const d: QuadOrdinal = load(Ordinal, pool, address +% 12);
+                return a | (b << 32) | (c << 64) | (d << 96);
             }
         },
         else => @compileError("Requested type not allowed!"),
