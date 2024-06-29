@@ -28,6 +28,11 @@ fn StorageFrame(
 }
 
 const RegisterFrame = StorageFrame(Ordinal, 16);
+const Page = StorageFrame(ByteOrdinal, 4096);
+const MemoryPool = StorageFrame(Page, 1 << 20);
+test "Memory Pool Size" {
+    try expect_eq(@sizeOf(MemoryPool), (4 * 1024 * 1024 * 1024));
+}
 const ArchitectureLevel = enum {
     Core,
     Numerics,
@@ -909,6 +914,7 @@ const TraceControls = packed struct {
 // there really isn't a point in keeping the instruction processing within the
 // Core structure
 const Core = struct {
+    memory: *MemoryPool = undefined,
     globals: RegisterFrame = RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
     locals: [4]RegisterFrame = [_]RegisterFrame{
         RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -1284,10 +1290,15 @@ test "overflow test" {
     const e = math.add(u32, c, d) catch 33;
     try expect(e == 33);
 }
-
 pub fn main() !void {
     std.debug.print("i960 Simulator\n", .{});
-    var core = Core{};
+    // allocate all of the memory at once
+    const allocator = std.heap.page_allocator;
+    const buffer = try allocator.create(MemoryPool);
+    defer allocator.destroy(buffer);
+    var core = Core{
+        .memory = buffer,
+    };
     var prng = std.rand.DefaultPrng.init(blk: {
         var seed: u64 = undefined;
         try std.posix.getrandom(std.mem.asBytes(&seed));
@@ -1297,11 +1308,10 @@ pub fn main() !void {
     while (core.continueExecuting) {
         core.newCycle();
         const result = decode(rand.int(Ordinal));
-        try processInstruction(&core, result);
+        processInstruction(&core, result) catch |x| {
+            return x;
+        };
 
-        //processInstruction(&core, result) catch {
-        // consume it for now but we want to
-        //};
         core.nextInstruction();
     }
 }
