@@ -34,11 +34,11 @@ const MemoryPool = StorageFrame(ByteOrdinal, 4 * 1024 * 1024 * 1024);
 // way
 fn load(pool: *MemoryPool, comptime T: type, address: Address) T {
     return switch (T) {
-        ByteOrdinal => pool[address],
-        ShortOrdinal => {
+        ByteOrdinal => @bitCast(pool[address]),
+        ShortOrdinal, ShortInteger => {
             const lo: ShortOrdinal = pool[address];
             const hi: ShortOrdinal = pool[address +% 1];
-            return lo | (hi << 8);
+            return @bitCast(lo | (hi << 8));
         },
         else => @compileError("Requested type not allowed!"),
     };
@@ -51,8 +51,11 @@ test "Structure Size Check 2" {
     const allocator = std.heap.page_allocator;
     const buffer = try allocator.create(MemoryPool);
     defer allocator.destroy(buffer);
-    buffer[0] = 0x0a;
-    try expect_eq(load(buffer, ByteOrdinal, 0), 0x0a);
+    buffer[0] = 0xFF;
+    buffer[1] = 0xFF;
+    try expect_eq(load(buffer, ByteOrdinal, 0), 0xFF);
+    try expect_eq(load(buffer, ShortOrdinal, 0), 0xFFFF);
+    try expect_eq(load(buffer, ShortInteger, 0), -1);
 }
 
 const ArchitectureLevel = enum {
