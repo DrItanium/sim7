@@ -3,38 +3,38 @@ const meta = @import("std").meta;
 const math = @import("std").math;
 const expect = std.testing.expect;
 const expect_eq = std.testing.expectEqual;
-pub const Operand = u5;
+const Operand = u5;
 
-pub const ByteInteger = i8;
-pub const ByteOrdinal = u8;
-pub const ShortInteger = i16;
-pub const ShortOrdinal = u16;
-pub const Integer = i32;
-pub const Ordinal = u32;
-pub const LongOrdinal = u64;
-pub const LongInteger = i64;
-pub const TripleOrdinal = u96;
-pub const QuadOrdinal = u128;
-pub const Address = u32;
+const ByteInteger = i8;
+const ByteOrdinal = u8;
+const ShortInteger = i16;
+const ShortOrdinal = u16;
+const Integer = i32;
+const Ordinal = u32;
+const LongOrdinal = u64;
+const LongInteger = i64;
+const TripleOrdinal = u96;
+const QuadOrdinal = u128;
+const Address = u32;
 
-pub const Real = f32;
-pub const LongReal = f64;
-pub const ExtendedReal = f80;
-pub fn StorageFrame(
+const Real = f32;
+const LongReal = f64;
+const ExtendedReal = f80;
+fn StorageFrame(
     comptime T: type,
     comptime count: comptime_int,
 ) type {
     return [count]T;
 }
 
-pub const RegisterFrame = StorageFrame(Ordinal, 16);
-pub const ArchitectureLevel = enum {
+const RegisterFrame = StorageFrame(Ordinal, 16);
+const ArchitectureLevel = enum {
     Core,
     Numerics,
     Protected,
     Extended,
 };
-pub const InstructionClass = enum(u2) {
+const InstructionClass = enum(u2) {
     CTRL,
     COBR,
     REG,
@@ -916,9 +916,9 @@ const Core = struct {
         RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
         RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
     },
+    currentLocalFrame: u2 = 0,
     fpr: [4]ExtendedReal = [_]ExtendedReal{ 0.0, 0.0, 0.0, 0.0 },
     ip: Ordinal = 0,
-    currentLocalFrame: u2 = 0,
     advanceBy: u3 = 4,
     pc: ProcessControls = @bitCast(@as(u32, 0)),
     ac: ArithmeticControls = @bitCast(@as(u32, 0)),
@@ -940,11 +940,69 @@ const Core = struct {
             return &self.locals[self.currentLocalFrame][index & 0b1111];
         }
     }
+
+    fn getFloatingPointRegister(self: *Core, index: Operand) !*ExtendedReal {
+        return switch (index) {
+            0b00000...0b00011 => |val| &self.fpr[val],
+            else => error.IllegalOperand,
+        };
+    }
     fn setRegisterValue(self: *Core, index: Operand, value: Ordinal) void {
         self.getRegister(index).* = value;
     }
     fn getRegisterValue(self: *Core, index: Operand) Ordinal {
         return self.getRegister(index).*;
+    }
+    fn getTripleRegisterValue(self: *Core, index: Operand) !TripleOrdinal {
+        if ((index & 0b11) != 0) {
+            return error.InvalidOpcodeFault;
+        }
+        const a: TripleOrdinal = self.getRegisterValue(index);
+        const b: TripleOrdinal = self.getRegisterValue(index + 1);
+        const c: TripleOrdinal = self.getRegisterValue(index + 2);
+        return a | math.shl(TripleOrdinal, b, 32) | math.shl(TripleOrdinal, c, 64);
+    }
+    fn getQuadRegisterValue(self: *Core, index: Operand) !QuadOrdinal {
+        if ((index & 0b11) != 0) {
+            return error.InvalidOpcodeFault;
+        }
+        const a: QuadOrdinal = self.getRegisterValue(index);
+        const b: QuadOrdinal = self.getRegisterValue(index + 1);
+        const c: QuadOrdinal = self.getRegisterValue(index + 2);
+        const d: QuadOrdinal = self.getRegisterValue(index + 3);
+        return a | math.shl(QuadOrdinal, b, 32) | math.shl(QuadOrdinal, c, 64) | math.shl(QuadOrdinal, d, 96);
+    }
+    fn getLongRegisterValue(self: *Core, index: Operand) !LongOrdinal {
+        if ((index & 0b1) != 0) {
+            return error.InvalidOpcodeFault;
+        }
+        const lower: LongOrdinal = self.getRegisterValue(index);
+        const upper: LongOrdinal = self.getRegisterValue(index + 1);
+        return lower | math.shl(LongOrdinal, upper, 32);
+    }
+    fn setLongRegisterValue(self: *Core, index: Operand, value: LongOrdinal) !void {
+        if ((index & 0b1) != 0) {
+            return error.InvalidOpcodeFault;
+        }
+        self.setRegisterValue(index, @truncate(value));
+        self.setRegisterValue(index + 1, @truncate(math.shr(LongOrdinal, value, 32)));
+    }
+    fn setTripleRegisterValue(self: *Core, index: Operand, value: TripleOrdinal) !void {
+        if ((index & 0b11) != 0) {
+            return error.InvalidOpcodeFault;
+        }
+        self.setRegisterValue(index, @truncate(value));
+        self.setRegisterValue(index + 1, @truncate(math.shr(TripleOrdinal, value, 32)));
+        self.setRegisterValue(index + 2, @truncate(math.shr(TripleOrdinal, value, 64)));
+    }
+    fn setQuadRegisterValue(self: *Core, index: Operand, value: QuadOrdinal) !void {
+        if ((index & 0b11) != 0) {
+            return error.InvalidOpcodeFault;
+        }
+        self.setRegisterValue(index, @truncate(value));
+        self.setRegisterValue(index + 1, @truncate(math.shr(QuadOrdinal, value, 32)));
+        self.setRegisterValue(index + 2, @truncate(math.shr(QuadOrdinal, value, 64)));
+        self.setRegisterValue(index + 3, @truncate(math.shr(QuadOrdinal, value, 96)));
     }
     fn relativeBranch(self: *Core, displacement: i24) void {
         self.advanceBy = 0;
@@ -1067,6 +1125,14 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
                 core.ac.@"condition code" = 0b000;
             }
         },
+        DecodedOpcode.emul => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            const src1: LongOrdinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
+            const src2: LongOrdinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            try core.setLongRegisterValue(srcDestIndex, src2 *% src1);
+        },
         DecodedOpcode.@"and",
         DecodedOpcode.@"or",
         DecodedOpcode.andnot,
@@ -1145,52 +1211,22 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             // be as simple as possible
             const src1Index = instruction.getSrc1() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            if (((src1Index & 0b1) != 0) or ((srcDestIndex & 0b1) != 0)) {
-                core.nextInstruction();
-                return error.InvalidOpcodeFault;
-            }
-            const srcLo = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
-            const srcHi = if (instruction.reg.treatSrc1AsLiteral()) 0 else core.getRegisterValue(src1Index + 1);
-            core.setRegisterValue(srcDestIndex, srcLo);
-            core.setRegisterValue(srcDestIndex + 1, srcHi);
+            const srcValue: LongOrdinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else try core.getLongRegisterValue(src1Index);
+            try core.setLongRegisterValue(srcDestIndex, srcValue);
         },
         DecodedOpcode.movt => {
             // be as simple as possible
             const src1Index = instruction.getSrc1() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            if (((src1Index & 0b11) != 0) or ((srcDestIndex & 0b11) != 0)) {
-                core.nextInstruction();
-                return error.InvalidOpcodeFault;
-            }
-            if (instruction.reg.treatSrc1AsLiteral()) {
-                core.setRegisterValue(srcDestIndex, src1Index);
-                core.setRegisterValue(srcDestIndex + 1, 0);
-                core.setRegisterValue(srcDestIndex + 2, 0);
-            } else {
-                core.moveRegisterValue(srcDestIndex + 0, src1Index + 0);
-                core.moveRegisterValue(srcDestIndex + 1, src1Index + 1);
-                core.moveRegisterValue(srcDestIndex + 2, src1Index + 2);
-            }
+            const srcValue: TripleOrdinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else try core.getTripleRegisterValue(src1Index);
+            try core.setTripleRegisterValue(srcDestIndex, srcValue);
         },
         DecodedOpcode.movq => {
             // be as simple as possible
             const src1Index = instruction.getSrc1() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            if (((src1Index & 0b11) != 0) or ((srcDestIndex & 0b11) != 0)) {
-                core.nextInstruction();
-                return error.InvalidOpcodeFault;
-            }
-            if (instruction.reg.treatSrc1AsLiteral()) {
-                core.setRegisterValue(srcDestIndex, src1Index);
-                core.setRegisterValue(srcDestIndex + 1, 0);
-                core.setRegisterValue(srcDestIndex + 2, 0);
-                core.setRegisterValue(srcDestIndex + 3, 0);
-            } else {
-                core.moveRegisterValue(srcDestIndex + 0, src1Index + 0);
-                core.moveRegisterValue(srcDestIndex + 1, src1Index + 1);
-                core.moveRegisterValue(srcDestIndex + 2, src1Index + 2);
-                core.moveRegisterValue(srcDestIndex + 3, src1Index + 3);
-            }
+            const srcValue: QuadOrdinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else try core.getQuadRegisterValue(src1Index);
+            try core.setQuadRegisterValue(srcDestIndex, srcValue);
         },
         DecodedOpcode.addi => {
             const src1Index = instruction.getSrc1() catch unreachable;
