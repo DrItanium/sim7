@@ -171,7 +171,6 @@ test "Structure Size Check 2" {
     try expect_eq(load(TripleOrdinal, buffer, 2), 0x221189674523_01efcdab_ffff);
     try expect_eq(load(QuadOrdinal, buffer, 0), 0x44332211_89674523_01efcdab_ffffFDED);
     try expect_eq(load(QuadOrdinal, buffer, 1), 0x55443322_11896745_2301efcd_abffffFD);
-    //try expect_eq(load(buffer, Integer, 0), 0xFFFF_FDED);
 }
 
 const ArchitectureLevel = enum {
