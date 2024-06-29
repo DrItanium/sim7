@@ -28,19 +28,31 @@ fn StorageFrame(
 }
 
 const RegisterFrame = StorageFrame(Ordinal, 16);
-const Page = StorageFrame(ByteOrdinal, 4096);
-const MemoryPool = StorageFrame(Page, 1 << 20);
+const MemoryPool = StorageFrame(ByteOrdinal, 4 * 1024 * 1024 * 1024);
 
-// need to access byte by byte
+// need to access byte by byte so we can reconstruct in a platform independent
+// way
 fn load(pool: *MemoryPool, comptime T: type, address: Address) T {
-    return switch (@typeInfo(T)) {
-        .ByteOrdinal => pool[address >> 12][address & 0xFFF],
+    return switch (T) {
+        ByteOrdinal => pool[address],
+        ShortOrdinal => {
+            const lo: ShortOrdinal = pool[address];
+            const hi: ShortOrdinal = pool[address +% 1];
+            return lo | (hi << 8);
+        },
         else => @compileError("Requested type not allowed!"),
     };
 }
+//fn store(pool: *MemoryPool, comptime T: type, address: Address, value : T) void {
+//}
 
 test "Structure Size Check 2" {
     try expect_eq(@sizeOf(MemoryPool), (4 * 1024 * 1024 * 1024));
+    const allocator = std.heap.page_allocator;
+    const buffer = try allocator.create(MemoryPool);
+    defer allocator.destroy(buffer);
+    buffer[0] = 0x0a;
+    try expect_eq(load(buffer, ByteOrdinal, 0), 0x0a);
 }
 
 const ArchitectureLevel = enum {
