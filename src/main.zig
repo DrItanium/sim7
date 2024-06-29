@@ -33,12 +33,19 @@ const MemoryPool = StorageFrame(ByteOrdinal, 4 * 1024 * 1024 * 1024);
 // need to access byte by byte so we can reconstruct in a platform independent
 // way
 fn load(pool: *MemoryPool, comptime T: type, address: Address) T {
+    const rawAddress = @intFromPtr(&pool);
     return switch (T) {
-        ByteOrdinal => @bitCast(pool[address]),
+        ByteOrdinal, ByteInteger => @bitCast(pool[address]),
         ShortOrdinal, ShortInteger => {
-            const lo: ShortOrdinal = pool[address];
-            const hi: ShortOrdinal = pool[address +% 1];
-            return @bitCast(lo | (hi << 8));
+            const properView: *[]ShortOrdinal = @ptrFromInt(rawAddress);
+            return @bitCast(properView.*[address >> 1]);
+        },
+        Ordinal, Integer => {
+            const a: Ordinal = pool[address];
+            const b: Ordinal = pool[address +% 1];
+            const c: Ordinal = pool[address +% 2];
+            const d: Ordinal = pool[address +% 3];
+            return @bitCast(a | (b << 8) | (c << 16) | (d << 24));
         },
         else => @compileError("Requested type not allowed!"),
     };
@@ -51,11 +58,18 @@ test "Structure Size Check 2" {
     const allocator = std.heap.page_allocator;
     const buffer = try allocator.create(MemoryPool);
     defer allocator.destroy(buffer);
-    buffer[0] = 0xFF;
-    buffer[1] = 0xFF;
-    try expect_eq(load(buffer, ByteOrdinal, 0), 0xFF);
-    try expect_eq(load(buffer, ShortOrdinal, 0), 0xFFFF);
-    try expect_eq(load(buffer, ShortInteger, 0), -1);
+    buffer[0] = 0xED;
+    buffer[1] = 0xFD;
+    buffer[2] = 0xFF;
+    buffer[3] = 0xFF;
+    try expect_eq(load(buffer, ByteOrdinal, 0), 0xED);
+    try expect_eq(load(buffer, ByteOrdinal, 1), 0xFD);
+    try expect_eq(load(buffer, ByteInteger, 2), -1);
+    try expect_eq(load(buffer, ShortOrdinal, 0), 0xFDED);
+    try expect_eq(load(buffer, ShortInteger, 2), -1);
+    try expect_eq(load(buffer, ShortOrdinal, 2), 0xFFFF);
+    try expect_eq(load(buffer, Ordinal, 0), 0xFFFFFDED);
+    //try expect_eq(load(buffer, Integer, 0), 0xFFFF_FDED);
 }
 
 const ArchitectureLevel = enum {
