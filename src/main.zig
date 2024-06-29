@@ -1290,6 +1290,84 @@ test "overflow test" {
     const e = math.add(u32, c, d) catch 33;
     try expect(e == 33);
 }
+test "allocation test" {
+    const allocator = std.heap.page_allocator;
+    const buffer = try allocator.alloc(u8, 4);
+    defer allocator.free(buffer);
+    try expect(buffer.len == 4);
+    for (buffer, 0..) |*val, ind| {
+        val.* = @truncate(ind);
+    }
+    for (buffer, 0..) |val, ind| {
+        try expect_eq(val, ind);
+    }
+}
+test "allocation test2" {
+    const allocator = std.heap.page_allocator;
+    const buffer = try allocator.alloc(u32, 4);
+    defer allocator.free(buffer);
+    try expect(buffer.len == 4);
+    for (buffer, 0..) |*val, ind| {
+        val.* = @truncate(ind + 0x03020100);
+    }
+    for (buffer, 0..) |val, ind| {
+        try expect_eq(val, (ind + 0x03020100));
+    }
+    // okay, so now we need to see if we can view the various components
+    //
+    // it is trivial to go from larger to smaller!
+    const buffer2: *const [4]u8 = @ptrCast(&buffer[0]);
+    try expect_eq(buffer2[0], 0x00);
+    try expect_eq(buffer2[1], 0x01);
+    try expect_eq(buffer2[2], 0x02);
+    try expect_eq(buffer2[3], 0x03);
+}
+
+test "allocation test3" {
+    const allocator = std.heap.page_allocator;
+    const buffer = try allocator.alloc(u64, 4);
+    defer allocator.free(buffer);
+    try expect(buffer.len == 4);
+    for (buffer, 0..) |*val, ind| {
+        val.* = @truncate(ind + 0x0706050403020100);
+    }
+    for (buffer, 0..) |val, ind| {
+        try expect_eq(val, (ind + 0x0706050403020100));
+    }
+    // okay, so now we need to see if we can view the various components
+    //
+    // it is trivial to go from larger to smaller!
+    const buffer2: *const [@sizeOf(u64)]u8 = @ptrCast(&buffer[0]);
+    for (buffer2, 0..) |value, idx| {
+        try expect_eq(value, idx);
+    }
+    // view as two ordinals instead
+    const buffer3: *const [@sizeOf(u64) / @sizeOf(Ordinal)]Ordinal = @ptrCast(&buffer[0]);
+    try expect(buffer3[0] == 0x03020100 or buffer3[0] == 0x07060504);
+    try expect(buffer3[1] == 0x03020100 or buffer3[1] == 0x07060504);
+}
+
+test "allocation test4" {
+    const AllocationType = u128;
+    const allocator = std.heap.page_allocator;
+    const buffer = try allocator.alloc(AllocationType, 4);
+    defer allocator.free(buffer);
+    try expect(buffer.len == 4);
+    const combinatorial: AllocationType = 0x0f0e0d0c_0b0a0908_07060504_03020100;
+    for (buffer, 0..) |*val, ind| {
+        val.* = @truncate(ind + combinatorial);
+    }
+    for (buffer, 0..) |val, ind| {
+        try expect_eq(val, (ind + combinatorial));
+    }
+    // okay, so now we need to see if we can view the various components
+    //
+    // it is trivial to go from larger to smaller!
+    const buffer2: *const [@sizeOf(AllocationType)]u8 = @ptrCast(&buffer[0]);
+    for (buffer2, 0..) |value, idx| {
+        try expect_eq(value, idx);
+    }
+}
 pub fn main() !void {
     std.debug.print("i960 Simulator\n", .{});
     // allocate all of the memory at once
