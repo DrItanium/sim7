@@ -44,8 +44,8 @@ fn load(
                 const properView: *[]ShortOrdinal = @ptrFromInt(@intFromPtr(&pool));
                 return @bitCast(properView.*[address >> 1]);
             } else {
-                const a: ShortOrdinal = pool[address];
-                const b: ShortOrdinal = pool[address +% 1];
+                const a: ShortOrdinal = load(ByteOrdinal, pool, address);
+                const b: ShortOrdinal = load(ByteOrdinal, pool, address +% 1);
                 return @bitCast(a | (b << 8));
             }
         },
@@ -67,6 +67,33 @@ fn load(
                 const a: LongOrdinal = load(Ordinal, pool, address);
                 const b: LongOrdinal = load(Ordinal, pool, address +% 4);
                 return @bitCast(a | (b << 32));
+            }
+        },
+        TripleOrdinal => {
+            if ((address & 0b1111) == 0) {
+                // triple ordinals are strange as they are 96 bits in size.
+                // However, the i960 treats them as aligned only on 16 byte
+                // boundaries (same as quad ordinals) so we can use the
+                // optimization only when aligned
+                const properView: *[]TripleOrdinal = @ptrFromInt(@intFromPtr(&pool));
+                return @bitCast(properView.*[address >> 4]);
+            } else if ((address & 0b11) == 0) {
+                // cool beans, the address is actually aligned to 32-bit
+                // boundaries so we can actually do three separate optimized
+                // ordinal loads
+                const adjustedAddress = address >> 2;
+                const properView: *[]Ordinal = @ptrFromInt(@intFromPtr(&pool));
+                const a: TripleOrdinal = properView[adjustedAddress +% 0];
+                const b: TripleOrdinal = properView[adjustedAddress +% 1];
+                const c: TripleOrdinal = properView[adjustedAddress +% 2];
+                return @bitCast(a | (b << 32) | (c << 64));
+            } else {
+                // load three separate ordinals, it may turn out that some of
+                // them are aligned actually!
+                const a: TripleOrdinal = load(Ordinal, pool, address);
+                const b: TripleOrdinal = load(Ordinal, pool, address +% 4);
+                const c: TripleOrdinal = load(Ordinal, pool, address +% 8);
+                return @bitCast(a | (b << 32) | (c << 64));
             }
         },
         else => @compileError("Requested type not allowed!"),
