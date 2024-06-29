@@ -83,9 +83,9 @@ fn load(
                 // ordinal loads
                 const adjustedAddress = address >> 2;
                 const properView: *[]Ordinal = @ptrFromInt(@intFromPtr(&pool));
-                const a: TripleOrdinal = properView[adjustedAddress +% 0];
-                const b: TripleOrdinal = properView[adjustedAddress +% 1];
-                const c: TripleOrdinal = properView[adjustedAddress +% 2];
+                const a: TripleOrdinal = properView.*[adjustedAddress +% 0];
+                const b: TripleOrdinal = properView.*[adjustedAddress +% 1];
+                const c: TripleOrdinal = properView.*[adjustedAddress +% 2];
                 return @bitCast(a | (b << 32) | (c << 64));
             } else {
                 // load three separate ordinals, it may turn out that some of
@@ -111,6 +111,14 @@ test "Structure Size Check 2" {
     buffer[1] = 0xFD;
     buffer[2] = 0xFF;
     buffer[3] = 0xFF;
+    buffer[4] = 0xab;
+    buffer[5] = 0xcd;
+    buffer[6] = 0xef;
+    buffer[7] = 0x01;
+    buffer[8] = 0x23;
+    buffer[9] = 0x45;
+    buffer[10] = 0x67;
+    buffer[11] = 0x89;
     try expect_eq(load(ByteOrdinal, buffer, 0), 0xED);
     try expect_eq(load(ByteOrdinal, buffer, 1), 0xFD);
     try expect_eq(load(ByteInteger, buffer, 2), -1);
@@ -118,6 +126,7 @@ test "Structure Size Check 2" {
     try expect_eq(load(ShortInteger, buffer, 2), -1);
     try expect_eq(load(ShortOrdinal, buffer, 2), 0xFFFF);
     try expect_eq(load(Ordinal, buffer, 0), 0xFFFFFDED);
+    try expect_eq(load(TripleOrdinal, buffer, 0), 0x89674523_01efcdab_ffffFDED);
     //try expect_eq(load(buffer, Integer, 0), 0xFFFF_FDED);
 }
 
