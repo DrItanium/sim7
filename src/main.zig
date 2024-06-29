@@ -119,6 +119,7 @@ test "Structure Size Check 2" {
     buffer[9] = 0x45;
     buffer[10] = 0x67;
     buffer[11] = 0x89;
+    buffer[12] = 0x55;
     try expect_eq(load(ByteOrdinal, buffer, 0), 0xED);
     try expect_eq(load(ByteOrdinal, buffer, 1), 0xFD);
     try expect_eq(load(ByteInteger, buffer, 2), -1);
@@ -127,6 +128,7 @@ test "Structure Size Check 2" {
     try expect_eq(load(ShortOrdinal, buffer, 2), 0xFFFF);
     try expect_eq(load(Ordinal, buffer, 0), 0xFFFFFDED);
     try expect_eq(load(TripleOrdinal, buffer, 0), 0x89674523_01efcdab_ffffFDED);
+    try expect_eq(load(TripleOrdinal, buffer, 1), 0x5589674523_01efcdab_ffffFD);
     //try expect_eq(load(buffer, Integer, 0), 0xFFFF_FDED);
 }
 
