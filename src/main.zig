@@ -1231,6 +1231,28 @@ const Core = struct {
     fn moveRegisterValue(self: *Core, dest: Operand, src: Operand) void {
         self.setRegisterValue(dest, self.getRegisterValue(src));
     }
+    fn loadFromMemory(
+        self: *Core,
+        comptime T: type,
+        addr: Address,
+    ) T {
+        return switch (addr) {
+            0xFE00_0000...0xFEFF_FFFF => 0,
+            else => load(T, self.memory, addr),
+        };
+    }
+    fn storeToMemory(
+        self: *Core,
+        comptime T: type,
+        addr: Address,
+        value: T,
+    ) void {
+        switch (addr) {
+            // io space detection
+            0xFE00_0000...0xFEFF_FFFF => {},
+            else => store(T, self.memory, addr, value),
+        }
+    }
 };
 fn computeBitpos(position: u5) Ordinal {
     return @as(Ordinal, 1) << position;
