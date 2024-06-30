@@ -1461,19 +1461,37 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
             core.ac.@"condition code" = if ((src & bitpos) == 0) 0b000 else 0b010;
         },
-        DecodedOpcode.cmpo => {
+        DecodedOpcode.cmpo,
+        DecodedOpcode.cmpdeco,
+        DecodedOpcode.cmpinco,
+        => |op| {
             const src1Index = instruction.getSrc1() catch unreachable;
             const src2Index = instruction.getSrc2() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
             const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
             const src2: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
             core.ac.@"condition code" = if (src1 < src2) 0b100 else if (src1 == src2) 0b010 else 0b001;
+            switch (op) {
+                DecodedOpcode.cmpdeco => core.setRegisterValue(srcDestIndex, src2 -% 1),
+                DecodedOpcode.cmpinco => core.setRegisterValue(srcDestIndex, src2 +% 1),
+                else => {},
+            }
         },
-        DecodedOpcode.cmpi => {
+        DecodedOpcode.cmpi,
+        DecodedOpcode.cmpdeci,
+        DecodedOpcode.cmpinci,
+        => |op| {
             const src1Index = instruction.getSrc1() catch unreachable;
             const src2Index = instruction.getSrc2() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
             const src1: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index));
             const src2: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index));
             core.ac.@"condition code" = if (src1 < src2) 0b100 else if (src1 == src2) 0b010 else 0b001;
+            switch (op) {
+                DecodedOpcode.cmpdeci => core.setRegisterValue(srcDestIndex, @bitCast(src2 -% 1)),
+                DecodedOpcode.cmpinci => core.setRegisterValue(srcDestIndex, @bitCast(src2 +% 1)),
+                else => {},
+            }
         },
         DecodedOpcode.@"and",
         DecodedOpcode.@"or",
