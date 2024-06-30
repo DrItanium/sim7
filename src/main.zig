@@ -1845,6 +1845,28 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
                 }
             }
         },
+        DecodedOpcode.fill => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            const dst: Ordinal = core.getRegisterValue(src1Index);
+            const value: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            const len: Ordinal = if (instruction.reg.treatSrcDestAsLiteral()) srcDestIndex else core.getRegisterValue(srcDestIndex);
+            core.ac.@"condition code" = 0b010;
+            for (0..((len / 4) - 1)) |i| {
+                const offset: Address = @truncate(i);
+                core.storeToMemory(Ordinal, dst +% offset, value);
+            }
+            switch (@mod(len, 4)) {
+                1 => core.storeToMemory(ByteOrdinal, dst + len - 1, @truncate(value)),
+                2 => core.storeToMemory(ShortOrdinal, dst + len - 2, @truncate(value)),
+                3 => {
+                    core.storeToMemory(ShortOrdinal, dst + len - 3, @truncate(value));
+                    core.storeToMemory(ByteOrdinal, dst + len - 1, @truncate(value >> 16));
+                },
+                else => {},
+            }
+        },
         else => return error.Unimplemented,
     }
 }
