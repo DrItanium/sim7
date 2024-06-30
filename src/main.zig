@@ -1430,7 +1430,22 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
                 ((src1 & 0x00FF0000) == (src2 & 0x00FF0000)) or
                 ((src1 & 0xFF000000) == (src2 & 0xFF000000))) 0b010 else 0b000;
         },
-
+        DecodedOpcode.setbit => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            const bitpos: Ordinal = computeBitpos(@truncate((if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
+            const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            core.setRegisterValue(srcDestIndex, src | bitpos);
+        },
+        DecodedOpcode.clrbit => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            const bitpos: Ordinal = computeBitpos(@truncate((if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
+            const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            core.setRegisterValue(srcDestIndex, src & (~bitpos));
+        },
         DecodedOpcode.@"and",
         DecodedOpcode.@"or",
         DecodedOpcode.andnot,
