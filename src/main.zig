@@ -768,13 +768,21 @@ const MEMBAddressComputationKind = enum(u4) {
     @"(abase)+(index)*2^scale+displacement" = 0b1111,
     pub fn usesOptionalDisplacement(self: MEMBAddressComputationKind) bool {
         return switch (self) {
-            MEMBAddressComputationKind.@"(abase)+displacement", MEMBAddressComputationKind.@"(index)*2^scale+displacement", MEMBAddressComputationKind.@"(abase)+(index)*2^scale+displacement", MEMBAddressComputationKind.displacement, MEMBAddressComputationKind.@"(ip)+displacement+8" => true,
+            MEMBAddressComputationKind.@"(abase)+displacement",
+            MEMBAddressComputationKind.@"(index)*2^scale+displacement",
+            MEMBAddressComputationKind.@"(abase)+(index)*2^scale+displacement",
+            MEMBAddressComputationKind.displacement,
+            MEMBAddressComputationKind.@"(ip)+displacement+8",
+            => true,
             else => false,
         };
     }
     pub fn usesScaleField(self: MEMBAddressComputationKind) bool {
         return switch (self) {
-            MEMBAddressComputationKind.@"(abase)+(index)*2^scale", MEMBAddressComputationKind.@"(index)*2^scale+displacement", MEMBAddressComputationKind.@"(abase)+(index)*2^scale+displacement" => true,
+            MEMBAddressComputationKind.@"(abase)+(index)*2^scale",
+            MEMBAddressComputationKind.@"(index)*2^scale+displacement",
+            MEMBAddressComputationKind.@"(abase)+(index)*2^scale+displacement",
+            => true,
             else => false,
         };
     }
@@ -801,13 +809,13 @@ const MEMAInstruction = packed struct {
 };
 
 const MEMBInstruction = packed struct {
-    index: Operand,
-    unused: u2,
-    scale: u3,
-    mode: MEMBAddressComputationKind,
-    abase: Operand,
-    srcDest: Operand,
-    opcode: u8,
+    index: Operand = 0,
+    unused: u2 = 0,
+    scale: u3 = 0,
+    mode: u4 = 0,
+    abase: Operand = 0,
+    srcDest: Operand = 0,
+    opcode: u8 = 0,
 
     pub fn getOpcode(self: *const MEMBInstruction) !DecodedOpcode {
         return meta.intToEnum(DecodedOpcode, self.opcode) catch error.IllegalOpcode;
@@ -815,10 +823,17 @@ const MEMBInstruction = packed struct {
     pub fn usesOptionalDisplacement(self: *const MEMBInstruction) bool {
         return self.mode.usesOptionalDisplacement();
     }
-    pub fn getComputationMode(self: *const MEMBInstruction) MEMBAddressComputationKind {
-        return self.mode;
+    pub fn getComputationMode(self: *const MEMBInstruction) !MEMBAddressComputationKind {
+        return meta.intToEnum(MEMBAddressComputationKind, self.mode) catch error.IllegalOperand;
     }
 };
+
+test "Bad MEMB Instruction" {
+    const tmp = MEMBInstruction{
+        .mode = 0b0110,
+    };
+    try expect(tmp.getComputationMode() == error.IllegalOperand);
+}
 
 const InstructionDeterminant = packed struct {
     unused0: u12,
@@ -1223,9 +1238,8 @@ const Core = struct {
     }
     fn computeEffectiveAddress(
         self: *Core,
-        comptime T: type,
         instruction: Instruction,
-    ) !T {
+    ) !Address {
         return switch (instruction) {
             .mema => |inst| {
                 return switch (inst.getComputationMode()) {
@@ -1234,7 +1248,7 @@ const Core = struct {
                 };
             },
             .memb => |inst| {
-                return switch (inst.getComputationMode()) {
+                return switch (try inst.getComputationMode()) {
                     MEMBAddressComputationKind.@"(abase)" => @bitCast(self.getRegisterValue(inst.abase)),
                     MEMBAddressComputationKind.@"(ip)+displacement+8" => {
                         // okay so this is the first instruction that needs to
@@ -1251,8 +1265,27 @@ const Core = struct {
                         const outcome: Integer = self.loadFromMemory(Integer, self.ip + 4);
                         return @bitCast(outcome);
                     },
-
-                    else => error.InvalidOperandFault,
+                    MEMBAddressComputationKind.@"(abase)+displacement" => {
+                        self.advanceBy = 8;
+                        const outcome: Integer = self.loadFromMemory(Integer, self.ip + 4);
+                        const abase: Integer = @bitCast(self.getRegisterValue(inst.abase));
+                        return @bitCast(outcome +% abase);
+                    },
+                    MEMBAddressComputationKind.@"(index)*2^scale+displacement" => {
+                        self.advanceBy = 8;
+                        const displacement: Integer = self.loadFromMemory(Integer, self.ip + 4);
+                        const idx: Integer = @bitCast(self.getRegisterValue(inst.index));
+                        const scale = inst.scale;
+                        return @bitCast((idx << scale) + displacement);
+                    },
+                    MEMBAddressComputationKind.@"(abase)+(index)*2^scale+displacement" => {
+                        self.advanceBy = 8;
+                        const displacement: Integer = self.loadFromMemory(Integer, self.ip + 4);
+                        const idx: Integer = @bitCast(self.getRegisterValue(inst.index));
+                        const scale = inst.scale;
+                        const abase: Integer = @bitCast(self.getRegisterValue(inst.abase));
+                        return @bitCast(abase + (idx << scale) + displacement);
+                    },
                 };
             },
             else => error.NotMemInstruction,
@@ -1265,7 +1298,7 @@ fn computeBitpos(position: u5) Ordinal {
 fn processInstruction(core: *Core, instruction: Instruction) !void {
     switch (try instruction.getOpcode()) {
         DecodedOpcode.b => core.relativeBranch(i24, instruction.ctrl.getDisplacement()),
-        DecodedOpcode.bx => core.relativeBranch(i32, try core.computeEffectiveAddress(i32, instruction)),
+        DecodedOpcode.bx => core.relativeBranch(i32, @bitCast(try core.computeEffectiveAddress(instruction))),
         DecodedOpcode.call => {
             // wait for any uncompleted instructions to finish
             const temp = (core.getRegisterValue(SP) + 63) & (~@as(Ordinal, 63)); // round to next boundary
