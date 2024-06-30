@@ -1623,6 +1623,37 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
                 return err;
             }));
         },
+        DecodedOpcode.lda => {
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            core.setRegisterValue(srcDestIndex, try core.computeEffectiveAddress(instruction));
+        },
+        DecodedOpcode.ldob => {
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            core.setRegisterValue(srcDestIndex, core.loadFromMemory(ByteOrdinal, try core.computeEffectiveAddress(instruction)));
+        },
+        DecodedOpcode.ldos => {
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            core.setRegisterValue(srcDestIndex, core.loadFromMemory(ShortOrdinal, try core.computeEffectiveAddress(instruction)));
+        },
+        DecodedOpcode.ld => {
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            core.setRegisterValue(srcDestIndex, core.loadFromMemory(Ordinal, try core.computeEffectiveAddress(instruction)));
+        },
+        DecodedOpcode.ldl => {
+            const effectiveAddress = try core.computeEffectiveAddress(instruction);
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            try core.setLongRegisterValue(srcDestIndex, core.loadFromMemory(LongOrdinal, effectiveAddress));
+        },
+        DecodedOpcode.ldt => {
+            const effectiveAddress = try core.computeEffectiveAddress(instruction);
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            try core.setTripleRegisterValue(srcDestIndex, core.loadFromMemory(TripleOrdinal, effectiveAddress));
+        },
+        DecodedOpcode.ldq => {
+            const effectiveAddress = try core.computeEffectiveAddress(instruction);
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            try core.setQuadRegisterValue(srcDestIndex, core.loadFromMemory(QuadOrdinal, effectiveAddress));
+        },
         else => return error.Unimplemented,
     }
 }
