@@ -1748,6 +1748,24 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
                 }
             }
         },
+        DecodedOpcode.addc => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
+            const src2: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            const carryBit: Ordinal = if ((core.ac.@"condition code" & 0b010) != 0) 1 else 0;
+            const partialCombination = @addWithOverflow(src2, src1);
+            const finalOutput = @addWithOverflow(partialCombination[0], carryBit);
+            const src2TopBit = src2 & 0x8000_0000;
+            const src1TopBit = src1 & 0x8000_0000;
+            const destTopBit = finalOutput[0] & 0x8000_0000;
+            core.setRegisterValue(srcDestIndex, finalOutput[0]);
+            var cc: u3 = 0b000;
+            cc |= if ((src2TopBit == src1TopBit) and (src2TopBit != destTopBit)) 0b001 else 0b000;
+            cc |= if (finalOutput[1] != 0) 0b010 else 0b000;
+            core.ac.@"condition code" = cc;
+        },
         else => return error.Unimplemented,
     }
 }
