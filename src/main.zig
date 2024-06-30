@@ -1748,7 +1748,6 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
                 }
             }
         },
-        //core.setRegisterValue(srcDestIndex, @bitCast(try math.add(Integer, src2, src1)));
         else => return error.Unimplemented,
     }
 }
