@@ -1446,6 +1446,35 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
             core.setRegisterValue(srcDestIndex, src & (~bitpos));
         },
+        DecodedOpcode.notbit => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            const bitpos: Ordinal = computeBitpos(@truncate((if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
+            const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            core.setRegisterValue(srcDestIndex, src ^ bitpos);
+        },
+        DecodedOpcode.chkbit => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const bitpos: Ordinal = computeBitpos(@truncate((if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
+            const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            core.ac.@"condition code" = if ((src & bitpos) == 0) 0b000 else 0b010;
+        },
+        DecodedOpcode.cmpo => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
+            const src2: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            core.ac.@"condition code" = if (src1 < src2) 0b100 else if (src1 == src2) 0b010 else 0b001;
+        },
+        DecodedOpcode.cmpi => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const src1: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index));
+            const src2: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index));
+            core.ac.@"condition code" = if (src1 < src2) 0b100 else if (src1 == src2) 0b010 else 0b001;
+        },
         DecodedOpcode.@"and",
         DecodedOpcode.@"or",
         DecodedOpcode.andnot,
