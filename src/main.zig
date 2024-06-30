@@ -746,6 +746,9 @@ const REGInstruction = packed struct {
     pub fn treatSrc2AsLiteral(self: *const REGInstruction) bool {
         return self.m2;
     }
+    pub fn treatSrcDestAsLiteral(self: *const REGInstruction) bool {
+        return self.m3;
+    }
     pub fn getOpcode(self: *const REGInstruction) !DecodedOpcode {
         var major: u12 = @as(u12, self.opcode);
         major <<= 4;
@@ -1810,6 +1813,37 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
 
             core.atomicStore(tempa, (addr & mask) | (temp & ~mask));
             core.setRegisterValue(destIndex, temp);
+        },
+        DecodedOpcode.calls => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const targ: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
+            if (targ > 259) {
+                return error.ProtectionLengthFault;
+            } else {
+                // @todo finish this implementation
+                return error.Unimplemented;
+            }
+        },
+        DecodedOpcode.cmpstr => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            const src1: Ordinal = core.getRegisterValue(src1Index);
+            const src2: Ordinal = core.getRegisterValue(src2Index);
+            const len: Ordinal = if (instruction.reg.treatSrcDestAsLiteral()) srcDestIndex else core.getRegisterValue(srcDestIndex);
+            core.ac.@"condition code" = 0b010;
+            for (0..(len - 1)) |i| {
+                const offset: Address = @truncate(i);
+                const bs1 = core.loadFromMemory(ByteOrdinal, src1 +% offset);
+                const bs2 = core.loadFromMemory(ByteOrdinal, src2 +% offset);
+                if (bs1 > bs2) {
+                    core.ac.@"condition code" = 0b001;
+                    break;
+                } else if (bs1 < bs2) {
+                    core.ac.@"condition code" = 0b100;
+                    break;
+                }
+            }
         },
         else => return error.Unimplemented,
     }
