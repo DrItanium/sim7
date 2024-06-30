@@ -1323,6 +1323,8 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             core.relativeBranch(i24, instruction.ctrl.getDisplacement());
         },
         DecodedOpcode.balx => {
+            // compute the effective address first since the link register
+            // could be included in the computation
             const destination = try core.computeEffectiveAddress(instruction);
             core.setRegisterValue(LinkRegister, core.ip + core.advanceBy);
             core.relativeBranch(i32, @bitCast(destination));
