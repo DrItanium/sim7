@@ -196,45 +196,6 @@ fn store(
     }
 }
 
-test "Structure Size Check 2" {
-    try expect_eq(@sizeOf(MemoryPool), (4 * 1024 * 1024 * 1024));
-}
-test "memory pool load/store test" {
-    const allocator = std.heap.page_allocator;
-    const buffer = try allocator.create(MemoryPool);
-    defer allocator.destroy(buffer);
-    buffer[0] = 0xED;
-    buffer[1] = 0xFD;
-    buffer[2] = 0xFF;
-    buffer[3] = 0xFF;
-    buffer[4] = 0xab;
-    buffer[5] = 0xcd;
-    buffer[6] = 0xef;
-    buffer[7] = 0x01;
-    buffer[8] = 0x23;
-    buffer[9] = 0x45;
-    buffer[10] = 0x67;
-    buffer[11] = 0x89;
-    store(Ordinal, buffer, 12, 0x44332211);
-    store(LongOrdinal, buffer, 16, 0xccbbaa99_88776655);
-    store(ShortOrdinal, buffer, 24, 0xeedd);
-    store(ByteOrdinal, buffer, 26, 0xff);
-    try expect_eq(load(ByteOrdinal, buffer, 16), 0x55);
-    try expect_eq(load(ByteOrdinal, buffer, 0), 0xED);
-    try expect_eq(load(ByteOrdinal, buffer, 1), 0xFD);
-    try expect_eq(load(ByteInteger, buffer, 2), -1);
-    try expect_eq(load(ShortOrdinal, buffer, 0), 0xFDED);
-    try expect_eq(load(ShortInteger, buffer, 2), -1);
-    try expect_eq(load(ShortOrdinal, buffer, 2), 0xFFFF);
-    try expect_eq(load(Ordinal, buffer, 0), 0xFFFFFDED);
-    try expect_eq(load(TripleOrdinal, buffer, 0), 0x89674523_01efcdab_ffffFDED);
-    try expect_eq(load(TripleOrdinal, buffer, 1), 0x1189674523_01efcdab_ffffFD);
-    try expect_eq(load(TripleOrdinal, buffer, 2), 0x221189674523_01efcdab_ffff);
-    try expect_eq(load(QuadOrdinal, buffer, 0), 0x44332211_89674523_01efcdab_ffffFDED);
-    try expect_eq(load(QuadOrdinal, buffer, 1), 0x55443322_11896745_2301efcd_abffffFD);
-    try expect_eq(load(ShortOrdinal, buffer, 24), 0xeedd);
-}
-
 const ArchitectureLevel = enum {
     Core,
     Numerics,
@@ -794,7 +755,7 @@ const REGInstruction = packed struct {
     }
 };
 const MEMAAddressComputationKind = enum(u1) {
-    Offset = 0,
+    offset = 0,
     @"(abase)+offset" = 1,
 };
 const MEMBAddressComputationKind = enum(u4) {
@@ -853,6 +814,9 @@ const MEMBInstruction = packed struct {
     }
     pub fn usesOptionalDisplacement(self: *const MEMBInstruction) bool {
         return self.mode.usesOptionalDisplacement();
+    }
+    pub fn getComputationMode(self: *const MEMBInstruction) MEMBAddressComputationKind {
+        return self.mode;
     }
 };
 
@@ -1212,7 +1176,11 @@ const Core = struct {
         self.setRegisterValue(index + 2, @truncate(math.shr(QuadOrdinal, value, 64)));
         self.setRegisterValue(index + 3, @truncate(math.shr(QuadOrdinal, value, 96)));
     }
-    fn relativeBranch(self: *Core, displacement: i24) void {
+    fn relativeBranch(
+        self: *Core,
+        comptime T: type,
+        displacement: T,
+    ) void {
         self.advanceBy = 0;
         var theip: Integer = @bitCast(self.ip);
         theip += displacement;
@@ -1253,13 +1221,37 @@ const Core = struct {
             else => store(T, self.memory, addr, value),
         }
     }
+    fn computeEffectiveAddress(
+        self: *Core,
+        comptime T: type,
+        instruction: Instruction,
+    ) !T {
+        return switch (instruction) {
+            .mema => |inst| {
+                return switch (inst.getComputationMode()) {
+                    MEMAAddressComputationKind.offset => inst.getOffset(),
+                    MEMAAddressComputationKind.@"(abase)+offset" => @bitCast(self.getRegisterValue(inst.abase) + inst.getOffset()),
+                };
+            },
+            .memb => |inst| {
+                return switch (inst.getComputationMode()) {
+                    MEMBAddressComputationKind.@"(abase)" => @bitCast(self.getRegisterValue(inst.abase)),
+                    MEMBAddressComputationKind.@"(abase)+(index)*2^scale" => @bitCast(self.getRegisterValue(inst.abase) +% (self.getRegisterValue(inst.index) << inst.scale)),
+
+                    else => error.InvalidOperandFault,
+                };
+            },
+            else => error.NotMemInstruction,
+        };
+    }
 };
 fn computeBitpos(position: u5) Ordinal {
     return @as(Ordinal, 1) << position;
 }
 fn processInstruction(core: *Core, instruction: Instruction) !void {
     switch (try instruction.getOpcode()) {
-        DecodedOpcode.b => core.relativeBranch(instruction.ctrl.getDisplacement()),
+        DecodedOpcode.b => core.relativeBranch(i24, instruction.ctrl.getDisplacement()),
+        DecodedOpcode.bx => core.relativeBranch(i32, try core.computeEffectiveAddress(i32, instruction)),
         DecodedOpcode.call => {
             // wait for any uncompleted instructions to finish
             const temp = (core.getRegisterValue(SP) + 63) & (~@as(Ordinal, 63)); // round to next boundary
@@ -1268,18 +1260,18 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             core.newLocalRegisterFrame();
             // at this point, all local register references are to the new
             // frame
-            core.relativeBranch(instruction.ctrl.getDisplacement());
+            core.relativeBranch(i24, instruction.ctrl.getDisplacement());
             core.moveRegisterValue(PFP, FP);
             core.setRegisterValue(FP, temp);
             core.setRegisterValue(SP, temp + 64);
         },
         DecodedOpcode.bal => {
             core.setRegisterValue(LinkRegister, core.ip + core.advanceBy);
-            core.relativeBranch(instruction.ctrl.getDisplacement());
+            core.relativeBranch(i24, instruction.ctrl.getDisplacement());
         },
         DecodedOpcode.bno => {
             if (core.ac.@"condition code" == 0b000) {
-                core.relativeBranch(instruction.ctrl.getDisplacement());
+                core.relativeBranch(i24, instruction.ctrl.getDisplacement());
             }
         },
         DecodedOpcode.bg,
@@ -1291,7 +1283,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
         DecodedOpcode.bo,
         => |opcode| {
             if ((opcode.getConditionCode() & core.ac.@"condition code") != 0) {
-                core.relativeBranch(instruction.ctrl.getDisplacement());
+                core.relativeBranch(i24, instruction.ctrl.getDisplacement());
             }
         },
 
@@ -1330,7 +1322,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const src = core.getRegisterValue(src2Index);
             if ((src & bitpos) == 0) {
                 core.ac.@"condition code" = 0b010;
-                core.relativeBranch(displacement);
+                core.relativeBranch(@TypeOf(displacement), displacement);
                 // resume execution at the new ip
             } else {
                 core.ac.@"condition code" = 0b000;
@@ -1346,7 +1338,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const src = core.getRegisterValue(src2Index);
             if ((src & bitpos) != 0) {
                 core.ac.@"condition code" = 0b010;
-                core.relativeBranch(displacement);
+                core.relativeBranch(@TypeOf(displacement), displacement);
                 // resume execution at the new ip
             } else {
                 core.ac.@"condition code" = 0b000;
@@ -1547,51 +1539,6 @@ test "allocation test2" {
     try expect_eq(buffer2[3], 0x03);
 }
 
-test "allocation test3" {
-    const allocator = std.heap.page_allocator;
-    const buffer = try allocator.alloc(u64, 4);
-    defer allocator.free(buffer);
-    try expect(buffer.len == 4);
-    for (buffer, 0..) |*val, ind| {
-        val.* = @truncate(ind + 0x0706050403020100);
-    }
-    for (buffer, 0..) |val, ind| {
-        try expect_eq(val, (ind + 0x0706050403020100));
-    }
-    // okay, so now we need to see if we can view the various components
-    //
-    // it is trivial to go from larger to smaller!
-    const buffer2: *const [@sizeOf(u64)]u8 = @ptrCast(&buffer[0]);
-    for (buffer2, 0..) |value, idx| {
-        try expect_eq(value, idx);
-    }
-    // view as two ordinals instead
-    const buffer3: *const [@sizeOf(u64) / @sizeOf(Ordinal)]Ordinal = @ptrCast(&buffer[0]);
-    try expect(buffer3[0] == 0x03020100 or buffer3[0] == 0x07060504);
-    try expect(buffer3[1] == 0x03020100 or buffer3[1] == 0x07060504);
-}
-
-test "allocation test4" {
-    const AllocationType = u128;
-    const allocator = std.heap.page_allocator;
-    const buffer = try allocator.alloc(AllocationType, 4);
-    defer allocator.free(buffer);
-    try expect(buffer.len == 4);
-    const combinatorial: AllocationType = 0x0f0e0d0c_0b0a0908_07060504_03020100;
-    for (buffer, 0..) |*val, ind| {
-        val.* = @truncate(ind + combinatorial);
-    }
-    for (buffer, 0..) |val, ind| {
-        try expect_eq(val, (ind + combinatorial));
-    }
-    // okay, so now we need to see if we can view the various components
-    //
-    // it is trivial to go from larger to smaller!
-    const buffer2: *const [@sizeOf(AllocationType)]u8 = @ptrCast(&buffer[0]);
-    for (buffer2, 0..) |value, idx| {
-        try expect_eq(value, idx);
-    }
-}
 pub fn main() !void {
     std.debug.print("i960 Simulator\n", .{});
     // allocate all of the memory at once
@@ -1756,4 +1703,89 @@ test "instruction decoder test 2" {
         .mema => true,
         else => false,
     });
+}
+
+test "allocation test3" {
+    const allocator = std.heap.page_allocator;
+    const buffer = try allocator.alloc(u64, 4);
+    defer allocator.free(buffer);
+    try expect(buffer.len == 4);
+    for (buffer, 0..) |*val, ind| {
+        val.* = @truncate(ind + 0x0706050403020100);
+    }
+    for (buffer, 0..) |val, ind| {
+        try expect_eq(val, (ind + 0x0706050403020100));
+    }
+    // okay, so now we need to see if we can view the various components
+    //
+    // it is trivial to go from larger to smaller!
+    const buffer2: *const [@sizeOf(u64)]u8 = @ptrCast(&buffer[0]);
+    for (buffer2, 0..) |value, idx| {
+        try expect_eq(value, idx);
+    }
+    // view as two ordinals instead
+    const buffer3: *const [@sizeOf(u64) / @sizeOf(Ordinal)]Ordinal = @ptrCast(&buffer[0]);
+    try expect(buffer3[0] == 0x03020100 or buffer3[0] == 0x07060504);
+    try expect(buffer3[1] == 0x03020100 or buffer3[1] == 0x07060504);
+}
+
+test "allocation test4" {
+    const AllocationType = u128;
+    const allocator = std.heap.page_allocator;
+    const buffer = try allocator.alloc(AllocationType, 4);
+    defer allocator.free(buffer);
+    try expect(buffer.len == 4);
+    const combinatorial: AllocationType = 0x0f0e0d0c_0b0a0908_07060504_03020100;
+    for (buffer, 0..) |*val, ind| {
+        val.* = @truncate(ind + combinatorial);
+    }
+    for (buffer, 0..) |val, ind| {
+        try expect_eq(val, (ind + combinatorial));
+    }
+    // okay, so now we need to see if we can view the various components
+    //
+    // it is trivial to go from larger to smaller!
+    const buffer2: *const [@sizeOf(AllocationType)]u8 = @ptrCast(&buffer[0]);
+    for (buffer2, 0..) |value, idx| {
+        try expect_eq(value, idx);
+    }
+}
+
+test "Structure Size Check 2" {
+    try expect_eq(@sizeOf(MemoryPool), (4 * 1024 * 1024 * 1024));
+}
+test "memory pool load/store test" {
+    const allocator = std.heap.page_allocator;
+    const buffer = try allocator.create(MemoryPool);
+    defer allocator.destroy(buffer);
+    buffer[0] = 0xED;
+    buffer[1] = 0xFD;
+    buffer[2] = 0xFF;
+    buffer[3] = 0xFF;
+    buffer[4] = 0xab;
+    buffer[5] = 0xcd;
+    buffer[6] = 0xef;
+    buffer[7] = 0x01;
+    buffer[8] = 0x23;
+    buffer[9] = 0x45;
+    buffer[10] = 0x67;
+    buffer[11] = 0x89;
+    store(Ordinal, buffer, 12, 0x44332211);
+    store(LongOrdinal, buffer, 16, 0xccbbaa99_88776655);
+    store(ShortOrdinal, buffer, 24, 0xeedd);
+    store(ByteOrdinal, buffer, 26, 0xff);
+    try expect_eq(load(ByteOrdinal, buffer, 16), 0x55);
+    try expect_eq(load(ByteOrdinal, buffer, 0), 0xED);
+    try expect_eq(load(ByteOrdinal, buffer, 1), 0xFD);
+    try expect_eq(load(ByteInteger, buffer, 2), -1);
+    try expect_eq(load(ShortOrdinal, buffer, 0), 0xFDED);
+    try expect_eq(load(ShortInteger, buffer, 2), -1);
+    try expect_eq(load(ShortOrdinal, buffer, 2), 0xFFFF);
+    try expect_eq(load(Ordinal, buffer, 0), 0xFFFFFDED);
+    try expect_eq(load(TripleOrdinal, buffer, 0), 0x89674523_01efcdab_ffffFDED);
+    try expect_eq(load(TripleOrdinal, buffer, 1), 0x1189674523_01efcdab_ffffFD);
+    try expect_eq(load(TripleOrdinal, buffer, 2), 0x221189674523_01efcdab_ffff);
+    try expect_eq(load(QuadOrdinal, buffer, 0), 0x44332211_89674523_01efcdab_ffffFDED);
+    try expect_eq(load(QuadOrdinal, buffer, 1), 0x55443322_11896745_2301efcd_abffffFD);
+    try expect_eq(load(ShortOrdinal, buffer, 24), 0xeedd);
 }
