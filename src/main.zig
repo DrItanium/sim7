@@ -1797,6 +1797,20 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             core.atomicStore(tempa, temp +% src);
             core.setRegisterValue(destIndex, temp);
         },
+        DecodedOpcode.atmod => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const destIndex = instruction.getSrcDest() catch unreachable;
+            const addr: Ordinal = core.getRegisterValue(src1Index);
+            const mask: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            // implicit syncf is performed but who cares for the simulator's
+            // purposes
+            const tempa = addr & (~(@as(Ordinal, 3)));
+            const temp = core.atomicLoad(tempa);
+
+            core.atomicStore(tempa, (addr & mask) | (temp & ~mask));
+            core.setRegisterValue(destIndex, temp);
+        },
         else => return error.Unimplemented,
     }
 }
