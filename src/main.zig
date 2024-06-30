@@ -1666,6 +1666,21 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
             try core.setQuadRegisterValue(srcDestIndex, core.loadFromMemory(QuadOrdinal, effectiveAddress));
         },
+        DecodedOpcode.modi => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            const denominator: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index));
+            const numerator: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index));
+            if (denominator == 0) {
+                return error.DivisionByZero;
+            }
+            var newDest: Integer = numerator - (@divExact(numerator, denominator) * denominator);
+            if ((numerator * denominator) < 0) {
+                newDest += denominator;
+            }
+            core.setRegisterValue(srcDestIndex, @bitCast(newDest));
+        },
         else => return error.Unimplemented,
     }
 }
