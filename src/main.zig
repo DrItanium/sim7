@@ -1299,7 +1299,9 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
     switch (try instruction.getOpcode()) {
         DecodedOpcode.b => core.relativeBranch(i24, instruction.ctrl.getDisplacement()),
         DecodedOpcode.bx => core.relativeBranch(i32, @bitCast(try core.computeEffectiveAddress(instruction))),
-        DecodedOpcode.call => {
+        DecodedOpcode.call,
+        DecodedOpcode.callx,
+        => |op| {
             // wait for any uncompleted instructions to finish
             const temp = (core.getRegisterValue(SP) + 63) & (~@as(Ordinal, 63)); // round to next boundary
             // save the return address to RIP in the _current_ frame
@@ -1307,7 +1309,11 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             core.newLocalRegisterFrame();
             // at this point, all local register references are to the new
             // frame
-            core.relativeBranch(i24, instruction.ctrl.getDisplacement());
+            switch (op) {
+                DecodedOpcode.call => core.relativeBranch(i24, instruction.ctrl.getDisplacement()),
+                DecodedOpcode.callx => core.ip = try core.computeEffectiveAddress(instruction),
+                else => unreachable,
+            }
             core.moveRegisterValue(PFP, FP);
             core.setRegisterValue(FP, temp);
             core.setRegisterValue(SP, temp + 64);
