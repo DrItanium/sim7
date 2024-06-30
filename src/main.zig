@@ -760,7 +760,7 @@ const MEMAAddressComputationKind = enum(u1) {
 };
 const MEMBAddressComputationKind = enum(u4) {
     @"(abase)" = 0b0100,
-    @"(IP)+displacement+8" = 0b0101,
+    @"(ip)+displacement+8" = 0b0101,
     @"(abase)+(index)*2^scale" = 0b0111,
     displacement = 0b1100,
     @"(abase)+displacement" = 0b1101,
@@ -768,7 +768,7 @@ const MEMBAddressComputationKind = enum(u4) {
     @"(abase)+(index)*2^scale+displacement" = 0b1111,
     pub fn usesOptionalDisplacement(self: MEMBAddressComputationKind) bool {
         return switch (self) {
-            MEMBAddressComputationKind.@"(abase)+displacement", MEMBAddressComputationKind.@"(index)*2^scale+displacement", MEMBAddressComputationKind.@"(abase)+(index)*2^scale+displacement", MEMBAddressComputationKind.displacement, MEMBAddressComputationKind.@"(IP)+displacement+8" => true,
+            MEMBAddressComputationKind.@"(abase)+displacement", MEMBAddressComputationKind.@"(index)*2^scale+displacement", MEMBAddressComputationKind.@"(abase)+(index)*2^scale+displacement", MEMBAddressComputationKind.displacement, MEMBAddressComputationKind.@"(ip)+displacement+8" => true,
             else => false,
         };
     }
@@ -1091,7 +1091,7 @@ const Core = struct {
     currentLocalFrame: u2 = 0,
     fpr: [4]ExtendedReal = [_]ExtendedReal{ 0.0, 0.0, 0.0, 0.0 },
     ip: Ordinal = 0,
-    advanceBy: u3 = 4,
+    advanceBy: u4 = 4,
     pc: ProcessControls = @bitCast(@as(u32, 0)),
     ac: ArithmeticControls = @bitCast(@as(u32, 0)),
     tc: TraceControls = @bitCast(@as(u32, 0)),
@@ -1236,7 +1236,21 @@ const Core = struct {
             .memb => |inst| {
                 return switch (inst.getComputationMode()) {
                     MEMBAddressComputationKind.@"(abase)" => @bitCast(self.getRegisterValue(inst.abase)),
+                    MEMBAddressComputationKind.@"(ip)+displacement+8" => {
+                        // okay so this is the first instruction that needs to
+                        // read the next word
+                        const nextWord: Integer = self.loadFromMemory(Integer, self.ip + 4);
+                        const theIP: Integer = @bitCast(self.ip);
+                        const outcome: Integer = theIP + nextWord + 8;
+                        self.advanceBy = 8;
+                        return @bitCast(outcome);
+                    },
                     MEMBAddressComputationKind.@"(abase)+(index)*2^scale" => @bitCast(self.getRegisterValue(inst.abase) +% (self.getRegisterValue(inst.index) << inst.scale)),
+                    MEMBAddressComputationKind.displacement => {
+                        self.advanceBy = 8;
+                        const outcome: Integer = self.loadFromMemory(Integer, self.ip + 4);
+                        return @bitCast(outcome);
+                    },
 
                     else => error.InvalidOperandFault,
                 };
