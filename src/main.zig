@@ -1316,6 +1316,11 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             core.setRegisterValue(LinkRegister, core.ip + core.advanceBy);
             core.relativeBranch(i24, instruction.ctrl.getDisplacement());
         },
+        DecodedOpcode.balx => {
+            const destination = try core.computeEffectiveAddress(instruction);
+            core.setRegisterValue(LinkRegister, core.ip + core.advanceBy);
+            core.relativeBranch(i32, @bitCast(destination));
+        },
         DecodedOpcode.bno => {
             if (core.ac.@"condition code" == 0b000) {
                 core.relativeBranch(i24, instruction.ctrl.getDisplacement());
