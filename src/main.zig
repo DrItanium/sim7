@@ -1681,6 +1681,74 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             }
             core.setRegisterValue(srcDestIndex, @bitCast(newDest));
         },
+        DecodedOpcode.selno,
+        DecodedOpcode.selg,
+        DecodedOpcode.sele,
+        DecodedOpcode.selge,
+        DecodedOpcode.sell,
+        DecodedOpcode.selne,
+        DecodedOpcode.selle,
+        DecodedOpcode.selo,
+        => |op| {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
+            const src2: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            const cc = core.ac.@"condition code";
+            const mask = op.getConditionCode();
+            core.setRegisterValue(srcDestIndex, if (((mask & cc) != 0) or (mask == cc)) src2 else src1);
+        },
+        DecodedOpcode.addono,
+        DecodedOpcode.addog,
+        DecodedOpcode.addoe,
+        DecodedOpcode.addoge,
+        DecodedOpcode.addol,
+        DecodedOpcode.addone,
+        DecodedOpcode.addole,
+        DecodedOpcode.addoo,
+        => |op| {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
+            const src2: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            const cc = core.ac.@"condition code";
+            const mask = op.getConditionCode();
+            if (((mask & cc) != 0) or (mask == cc)) {
+                core.setRegisterValue(srcDestIndex, src2 +% src1);
+            }
+        },
+        DecodedOpcode.addino,
+        DecodedOpcode.addig,
+        DecodedOpcode.addie,
+        DecodedOpcode.addige,
+        DecodedOpcode.addil,
+        DecodedOpcode.addine,
+        DecodedOpcode.addile,
+        DecodedOpcode.addio,
+        => |op| {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            const src1: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index));
+            const src2: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index));
+            const cc = core.ac.@"condition code";
+            const mask = op.getConditionCode();
+            if (((mask & cc) != 0) or (mask == cc)) {
+                // always set the destination register
+                const trueResult = @addWithOverflow(src2, src1);
+                core.setRegisterValue(srcDestIndex, @bitCast(trueResult[0]));
+                if (trueResult[1] != 0) {
+                    if (core.ac.@"integer overflow mask" == 1) {
+                        core.ac.@"integer overflow flag" = 1;
+                    } else {
+                        return error.Overflow;
+                    }
+                }
+            }
+        },
+        //core.setRegisterValue(srcDestIndex, @bitCast(try math.add(Integer, src2, src1)));
         else => return error.Unimplemented,
     }
 }
