@@ -1762,7 +1762,9 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const destTopBit = finalOutput[0] & 0x8000_0000;
             core.setRegisterValue(srcDestIndex, finalOutput[0]);
             var cc: u3 = 0b000;
+            // compute if an integer overflow would have taken place
             cc |= if ((src2TopBit == src1TopBit) and (src2TopBit != destTopBit)) 0b001 else 0b000;
+            // translate the overflow bit to the carry out position
             cc |= if (finalOutput[1] != 0) 0b010 else 0b000;
             core.ac.@"condition code" = cc;
         },
