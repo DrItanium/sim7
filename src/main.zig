@@ -1631,9 +1631,21 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
             core.setRegisterValue(srcDestIndex, core.loadFromMemory(ByteOrdinal, try core.computeEffectiveAddress(instruction)));
         },
+        DecodedOpcode.ldib => {
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            const efa = try core.computeEffectiveAddress(instruction);
+            const upgradedValue: Integer = core.loadFromMemory(ByteInteger, efa);
+            core.setRegisterValue(srcDestIndex, @bitCast(upgradedValue));
+        },
         DecodedOpcode.ldos => {
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
             core.setRegisterValue(srcDestIndex, core.loadFromMemory(ShortOrdinal, try core.computeEffectiveAddress(instruction)));
+        },
+        DecodedOpcode.ldis => {
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            const efa = try core.computeEffectiveAddress(instruction);
+            const upgradedValue: Integer = core.loadFromMemory(ShortInteger, efa);
+            core.setRegisterValue(srcDestIndex, @bitCast(upgradedValue));
         },
         DecodedOpcode.ld => {
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
