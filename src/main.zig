@@ -1412,6 +1412,25 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const src2: LongOrdinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
             try core.setLongRegisterValue(srcDestIndex, src2 *% src1);
         },
+        DecodedOpcode.rotate => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            const len: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
+            const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            core.setRegisterValue(srcDestIndex, math.rotl(Ordinal, src, len & 0b11111));
+        },
+        DecodedOpcode.scanbyte => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
+            const src2: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            core.ac.@"condition code" = if (((src1 & 0x000000FF) == (src2 & 0x000000FF)) or
+                ((src1 & 0x0000FF00) == (src2 & 0x0000FF00)) or
+                ((src1 & 0x00FF0000) == (src2 & 0x00FF0000)) or
+                ((src1 & 0xFF000000) == (src2 & 0xFF000000))) 0b010 else 0b000;
+        },
+
         DecodedOpcode.@"and",
         DecodedOpcode.@"or",
         DecodedOpcode.andnot,
