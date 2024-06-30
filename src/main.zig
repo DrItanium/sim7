@@ -1236,6 +1236,22 @@ const Core = struct {
             else => store(T, self.memory, addr, value),
         }
     }
+    fn atomicLoad(
+        self: *Core,
+        addr: Address,
+    ) Ordinal {
+        // @todo implement atomic locking support
+        return self.loadFromMemory(Ordinal, addr);
+    }
+    fn atomicStore(
+        self: *Core,
+        addr: Address,
+        value: Ordinal,
+    ) void {
+        // @todo implement atomic locking support
+        self.storeToMemory(Ordinal, addr, value);
+    }
+
     fn computeEffectiveAddress(
         self: *Core,
         instruction: Instruction,
@@ -1767,6 +1783,19 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             // translate the overflow bit to the carry out position
             cc |= if (finalOutput[1] != 0) 0b010 else 0b000;
             core.ac.@"condition code" = cc;
+        },
+        DecodedOpcode.atadd => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const destIndex = instruction.getSrcDest() catch unreachable;
+            const addr: Ordinal = core.getRegisterValue(src1Index);
+            const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            // implicit syncf is performed but who cares for the simulator's
+            // purposes
+            const tempa = addr & (~(@as(Ordinal, 3)));
+            const temp = core.atomicLoad(tempa);
+            core.atomicStore(tempa, temp +% src);
+            core.setRegisterValue(destIndex, temp);
         },
         else => return error.Unimplemented,
     }
