@@ -1,4 +1,4 @@
-simz
+sim7
 Copyright (c) 2024, Joshua Scoggins
 All rights reserved.
 

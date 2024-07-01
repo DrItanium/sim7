@@ -1,4 +1,4 @@
-# simz - an i960 simulator targeting desktops written in zig
+# sim7 - an i960 simulator targeting desktops written in zig
 
 
 Zig is a very rad new programming language which contains a bunch of cool
