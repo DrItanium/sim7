@@ -1971,53 +1971,6 @@ fn modify(mask: Ordinal, src: Ordinal, srcDest: Ordinal) Ordinal {
 fn alterbit(src: Ordinal, bitpos: Ordinal, clearBit: bool) Ordinal {
     return if (clearBit) (src & (~bitpos)) else (src | bitpos);
 }
-test "alterbit logic" {
-    try expect_eq(alterbit(0, (1 << 24), false), 0x0100_0000);
-}
-test "modify logic" {
-    try expect_eq(modify(0xFF, 0xFFFF, 0), 0xFF);
-}
-test "overflow test" {
-    const a: i32 = 0x7FFF_FFFF;
-    const b: i32 = 1;
-    try expect((a +% b) < 0);
-    const c: u32 = 0xFFFF_FFFF;
-    const d: u32 = 1;
-    const e = math.add(u32, c, d) catch 33;
-    try expect(e == 33);
-}
-test "allocation test" {
-    const allocator = std.heap.page_allocator;
-    const buffer = try allocator.alloc(u8, 4);
-    defer allocator.free(buffer);
-    try expect(buffer.len == 4);
-    for (buffer, 0..) |*val, ind| {
-        val.* = @truncate(ind);
-    }
-    for (buffer, 0..) |val, ind| {
-        try expect_eq(val, ind);
-    }
-}
-test "allocation test2" {
-    const allocator = std.heap.page_allocator;
-    const buffer = try allocator.alloc(u32, 4);
-    defer allocator.free(buffer);
-    try expect(buffer.len == 4);
-    for (buffer, 0..) |*val, ind| {
-        val.* = @truncate(ind + 0x03020100);
-    }
-    for (buffer, 0..) |val, ind| {
-        try expect_eq(val, (ind + 0x03020100));
-    }
-    // okay, so now we need to see if we can view the various components
-    //
-    // it is trivial to go from larger to smaller!
-    const buffer2: *const [4]u8 = @ptrCast(&buffer[0]);
-    try expect_eq(buffer2[0], 0x00);
-    try expect_eq(buffer2[1], 0x01);
-    try expect_eq(buffer2[2], 0x02);
-    try expect_eq(buffer2[3], 0x03);
-}
 
 pub fn main() !void {
     std.debug.print("i960 Simulator\n", .{});
@@ -2268,4 +2221,52 @@ test "memory pool load/store test" {
     try expect_eq(load(QuadOrdinal, buffer, 0), 0x44332211_89674523_01efcdab_ffffFDED);
     try expect_eq(load(QuadOrdinal, buffer, 1), 0x55443322_11896745_2301efcd_abffffFD);
     try expect_eq(load(ShortOrdinal, buffer, 24), 0xeedd);
+}
+
+test "alterbit logic" {
+    try expect_eq(alterbit(0, (1 << 24), false), 0x0100_0000);
+}
+test "modify logic" {
+    try expect_eq(modify(0xFF, 0xFFFF, 0), 0xFF);
+}
+test "overflow test" {
+    const a: i32 = 0x7FFF_FFFF;
+    const b: i32 = 1;
+    try expect((a +% b) < 0);
+    const c: u32 = 0xFFFF_FFFF;
+    const d: u32 = 1;
+    const e = math.add(u32, c, d) catch 33;
+    try expect(e == 33);
+}
+test "allocation test" {
+    const allocator = std.heap.page_allocator;
+    const buffer = try allocator.alloc(u8, 4);
+    defer allocator.free(buffer);
+    try expect(buffer.len == 4);
+    for (buffer, 0..) |*val, ind| {
+        val.* = @truncate(ind);
+    }
+    for (buffer, 0..) |val, ind| {
+        try expect_eq(val, ind);
+    }
+}
+test "allocation test2" {
+    const allocator = std.heap.page_allocator;
+    const buffer = try allocator.alloc(u32, 4);
+    defer allocator.free(buffer);
+    try expect(buffer.len == 4);
+    for (buffer, 0..) |*val, ind| {
+        val.* = @truncate(ind + 0x03020100);
+    }
+    for (buffer, 0..) |val, ind| {
+        try expect_eq(val, (ind + 0x03020100));
+    }
+    // okay, so now we need to see if we can view the various components
+    //
+    // it is trivial to go from larger to smaller!
+    const buffer2: *const [4]u8 = @ptrCast(&buffer[0]);
+    try expect_eq(buffer2[0], 0x00);
+    try expect_eq(buffer2[1], 0x01);
+    try expect_eq(buffer2[2], 0x02);
+    try expect_eq(buffer2[3], 0x03);
 }
