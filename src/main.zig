@@ -1973,6 +1973,26 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             }) * denominator;
             core.setRegisterValue(srcDestIndex, @bitCast(dest));
         },
+        DecodedOpcode.extract => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            const bitpos: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
+            const len: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            const srcDest: Ordinal = core.getRegisterValue(srcDestIndex);
+            if (bitpos >= 32) {
+                // anding anything with zero will result in zero so just bypass
+                core.setRegisterValue(srcDestIndex, 0);
+            } else if (len >= 32) {
+                // so if len is greater than or equal to 32 then it means zeros
+                // are shifted in and then inverted so just do the shifting
+                // operation
+                core.setRegisterValue(srcDestIndex, srcDest >> @truncate(bitpos));
+            } else {
+                // they are both in range :)
+                core.setRegisterValue(srcDestIndex, (srcDest >> @truncate(bitpos)) & (~(@as(Ordinal, 0xFFFF_FFFF) << @truncate(len))));
+            }
+        },
 
         else => return error.Unimplemented,
     }
