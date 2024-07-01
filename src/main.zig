@@ -1455,6 +1455,18 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const src2: LongOrdinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
             try core.setLongRegisterValue(srcDestIndex, src2 *% src1);
         },
+        DecodedOpcode.ediv => {
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            if ((srcDestIndex & 0b1) != 0) {
+                return error.InvalidOpcodeFault;
+            }
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
+            const src2: LongOrdinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else try core.getLongRegisterValue(src2Index);
+            core.setRegisterValue(srcDestIndex, @truncate(try math.rem(LongOrdinal, src2, src1)));
+            core.setRegisterValue(srcDestIndex + 1, @truncate(try math.divTrunc(LongOrdinal, src2, src1)));
+        },
         DecodedOpcode.rotate => {
             const src1Index = instruction.getSrc1() catch unreachable;
             const src2Index = instruction.getSrc2() catch unreachable;
