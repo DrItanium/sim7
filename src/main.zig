@@ -52,6 +52,12 @@ fn StorageFrame(
 }
 
 const RegisterFrame = StorageFrame(Ordinal, 16);
+
+const LocalRegisterFrame = struct {
+    contents: RegisterFrame = RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+    targetFramePointer: Address = 0,
+    valid: bool = false,
+};
 const MemoryPool = StorageFrame(ByteOrdinal, 4 * 1024 * 1024 * 1024);
 
 // need to access byte by byte so we can reconstruct in a platform independent
@@ -1119,8 +1125,10 @@ const TraceControls = packed struct {
         return @as(*Ordinal, @ptrCast(self)).*;
     }
 };
+
 // there really isn't a point in keeping the instruction processing within the
 // Core structure
+
 const Core = struct {
     memory: *MemoryPool = undefined,
     globals: RegisterFrame = RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -1130,6 +1138,7 @@ const Core = struct {
         RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
         RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
     },
+    // @todo link the size of this field to the number of local register frames
     currentLocalFrame: u2 = 0,
     fpr: [4]ExtendedReal = [_]ExtendedReal{ 0.0, 0.0, 0.0, 0.0 },
     ip: Ordinal = 0,
@@ -1993,6 +2002,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
                 core.setRegisterValue(srcDestIndex, (srcDest >> @truncate(bitpos)) & (~(@as(Ordinal, 0xFFFF_FFFF) << @truncate(len))));
             }
         },
+        DecodedOpcode.flushreg => {},
 
         else => return error.Unimplemented,
     }
