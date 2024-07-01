@@ -1898,6 +1898,38 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
                 }
             }
         },
+        DecodedOpcode.remo => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            const denominator: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
+            const numerator: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+
+            core.setRegisterValue(srcDestIndex, try math.rem(Ordinal, numerator, denominator));
+        },
+        DecodedOpcode.remi => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const src2Index = instruction.getSrc2() catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            const denominator: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index));
+            const numerator: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index));
+            // @todo implement support for Integer Overflow (which the Hx docs
+            // state does not generate an overflow fault)
+            //
+            // According to the Hx documentation, "remi produces the correct
+            // result (0) even when computing -2^31 remi -1, which would
+            // normally cause the corresponding division to overflow, although
+            // no fault is generated.
+            //
+            // So, no integer overflow despite the MC and KB manuals stating
+            // that an integer overflow is generated...
+            const dest: Integer = numerator - (math.divTrunc(Integer, numerator, denominator) catch |x| switch (x) {
+                error.Overflow => 0,
+                else => return x,
+            }) * denominator;
+            core.setRegisterValue(srcDestIndex, @bitCast(dest));
+        },
+
         else => return error.Unimplemented,
     }
 }
