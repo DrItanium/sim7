@@ -57,6 +57,17 @@ const LocalRegisterFrame = struct {
     contents: RegisterFrame = RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
     targetFramePointer: Address = 0,
     valid: bool = false,
+    fn synchronizeOwnership(self: *LocalRegisterFrame, val: Address) void {
+        self.targetFramePointer = val;
+    }
+    fn clear(self: *LocalRegisterFrame) void {
+        for (self.contents) |*cell| {
+            cell.* = 0;
+        }
+    }
+    fn isValid(self: *LocalRegisterFrame) bool {
+        return self.valid;
+    }
 };
 const MemoryPool = StorageFrame(ByteOrdinal, 4 * 1024 * 1024 * 1024);
 
