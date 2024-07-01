@@ -1622,10 +1622,8 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
             const denominator: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
             const numerator: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
-            core.setRegisterValue(srcDestIndex, math.divExact(Ordinal, numerator, denominator) catch |err| {
-                if (err == error.DivisionByZero) {
-                    core.nextInstruction();
-                }
+            core.setRegisterValue(srcDestIndex, math.divTrunc(Ordinal, numerator, denominator) catch |err| {
+                core.nextInstruction();
                 return err;
             });
         },
@@ -1635,11 +1633,21 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
             const denominator: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index));
             const numerator: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index));
-            core.setRegisterValue(srcDestIndex, @bitCast(math.divExact(Integer, numerator, denominator) catch |err| {
-                if (err == error.DivisionByZero) {
+            core.setRegisterValue(srcDestIndex, @bitCast(math.divTrunc(Integer, numerator, denominator) catch |err| switch (err) {
+                error.Overflow => {
+                    core.setRegisterValue(srcDestIndex, @bitCast(@as(Integer, math.minInt(Integer))));
+                    if (core.ac.@"integer overflow mask" == 1) {
+                        core.ac.@"integer overflow flag" = 1;
+                        return;
+                    } else {
+                        core.nextInstruction();
+                        return err;
+                    }
+                },
+                else => {
                     core.nextInstruction();
-                }
-                return err;
+                    return err;
+                },
             }));
         },
         DecodedOpcode.lda => {
