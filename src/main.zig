@@ -911,7 +911,29 @@ const Instruction = union(enum) {
     reg: REGInstruction,
     mema: MEMAInstruction,
     memb: MEMBInstruction,
-
+    pub fn getRegisterArguments(self: *const Instruction) ![]Operand {
+        return switch (self.*) {
+            .ctrl => [_]Operand{},
+            .cobr => |k| [_]Operand{
+                k.src1,
+                self.src2,
+            },
+            .reg => |k| [_]Operand{
+                k.srcDest,
+                k.src1,
+                k.src2,
+            },
+            .mema => |k| [_]Operand{
+                k.srcDest,
+                k.abase,
+            },
+            .memb => |k| [_]Operand{
+                k.srcDest,
+                k.abase,
+                k.index,
+            },
+        };
+    }
     pub fn getOpcode(self: *const Instruction) !DecodedOpcode {
         return switch (self.*) {
             .ctrl => |k| k.getOpcode(),
@@ -2024,7 +2046,6 @@ fn modify(mask: Ordinal, src: Ordinal, srcDest: Ordinal) Ordinal {
 fn alterbit(src: Ordinal, bitpos: Ordinal, clearBit: bool) Ordinal {
     return if (clearBit) (src & (~bitpos)) else (src | bitpos);
 }
-
 pub fn main() !void {
     std.debug.print("i960 Simulator\n", .{});
     // allocate all of the memory at once
@@ -2040,8 +2061,9 @@ pub fn main() !void {
     while (core.continueExecuting) {
         core.newCycle();
         const result = decode(core.loadFromMemory(Ordinal, core.ip));
-        processInstruction(&core, result) catch |x| {
-            return x;
+        processInstruction(&core, result) catch |x|
+            switch (x) {
+            else => return x,
         };
 
         core.nextInstruction();
