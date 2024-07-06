@@ -25,8 +25,8 @@ const std = @import("std");
 const meta = @import("std").meta;
 const math = @import("std").math;
 const io = std.io;
-const stdin = io.getStdIn();
-const stdout = io.getStdOut();
+const stdin = io.getStdIn().reader();
+const stdout = io.getStdOut().writer();
 
 const expect = std.testing.expect;
 const expect_eq = std.testing.expectEqual;
@@ -1297,8 +1297,6 @@ const Core = struct {
             0x10_0000...0xFF_FFFF => store(T, self.memory, addr, value),
             0x00_0008 => {
                 // putc
-                var storage: [1]u8 = undefined;
-                storage[0] = @truncate(value);
                 switch (T) {
                     // read from standard input
                     ByteOrdinal,
@@ -1311,11 +1309,11 @@ const Core = struct {
                     LongInteger,
                     TripleOrdinal,
                     QuadOrdinal,
-                    => _ = stdout.write(&storage) catch {},
+                    => _ = stdout.writeByte(@truncate(value)) catch {},
                     else => @compileError("Unsupported load types provided"),
                 }
             },
-            0x00_000C => stdout.sync() catch {},
+            //0x00_000C => stdout.sync() catch {},
             else => {},
         }
     }
@@ -1339,8 +1337,6 @@ const Core = struct {
             },
             0x00_0008 => {
                 // getc
-                var storage: [1]u8 = undefined;
-                storage[0] = 0;
                 switch (T) {
                     // read from standard input
                     ByteOrdinal,
@@ -1349,23 +1345,15 @@ const Core = struct {
                     LongOrdinal,
                     TripleOrdinal,
                     QuadOrdinal,
-                    => |theType| {
-                        const numRead = stdin.read(&storage) catch {
-                            return @as(theType, math.maxInt(theType));
-                        };
-                        return if (numRead != @sizeOf(theType)) @as(theType, math.maxInt(theType)) else storage[0];
+                    => |theType| return stdin.readByte() catch {
+                        return @as(theType, math.maxInt(theType));
                     },
                     ByteInteger,
                     ShortInteger,
                     Integer,
                     LongInteger,
-                    => |theType| {
-                        const numRead = stdin.read(&storage) catch {
-                            return @as(theType, math.minInt(theType));
-                        };
-                        const midpoint: ByteInteger = @bitCast(storage[0]);
-                        const resultant: theType = midpoint;
-                        return if (numRead != @sizeOf(theType)) @as(theType, math.minInt(theType)) else resultant;
+                    => |theType| return stdin.readByteSigned() catch {
+                        return @as(theType, math.minInt(theType));
                     },
                     else => @compileError("Unsupported load types provided"),
                 }
@@ -2164,7 +2152,7 @@ fn alterbit(src: Ordinal, bitpos: Ordinal, clearBit: bool) Ordinal {
     return if (clearBit) (src & (~bitpos)) else (src | bitpos);
 }
 pub fn main() !void {
-    std.debug.print("i960 Simulator\n", .{});
+    //std.debug.print("i960 Simulator\n", .{});
     // allocate all of the memory at once
     const allocator = std.heap.page_allocator;
     const buffer = try allocator.create(MemoryPool);
@@ -2174,6 +2162,10 @@ pub fn main() !void {
     };
     for (buffer) |*cell| {
         cell.* = 0;
+    }
+    const message = "i960 Simulator\n";
+    for (message) |x| {
+        core.storeToMemory(@TypeOf(x), 0xFE00_0008, x);
     }
     while (core.continueExecuting) {
         core.newCycle();
@@ -2192,9 +2184,20 @@ test "io system test" {
     var core = Core{
         .memory = undefined,
     };
-    try expect_eq(core.loadFromMemory(Ordinal, 0xFE00_0004), 20 * 1000 * 1000);
     try expect_eq(core.loadFromMemory(Ordinal, 0xFE00_0000), 10 * 1000 * 1000);
-    //core.storeToMemory(ByteOrdinal, 0xFE00_0004, 'a');
+    try expect_eq(core.loadFromMemory(Ordinal, 0xFE00_0004), 20 * 1000 * 1000);
+    try expect(core.loadFromMemory(Ordinal, 0xFE00_0040) != 0);
+    try expect(core.loadFromMemory(Ordinal, 0xFE00_0044) != 0);
+    std.debug.print("\n\n0x{x}\n0x{x}\n", .{
+        core.loadFromMemory(Ordinal, 0xFE00_0040),
+        core.loadFromMemory(Ordinal, 0xFE00_0044),
+    });
+    // store operations
+    core.storeToMemory(ByteOrdinal, 0xFE00_0008, 'A');
+    //core.storeToMemory(ByteOrdinal, 0xFE00_000C, 0);
+    // only activate this one once I figure out a way to input data to standard in
+    //try expect(core.loadFromMemory(Ordinal, 0xFE00_0008) != 0xFFFF_FFFF);
+
 }
 
 test "Opcodes Sanity Checks" {
