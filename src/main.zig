@@ -94,6 +94,27 @@ const LocalRegisterFrame = struct {
         self.synchronizeOwnership(newFP);
         // don't clear out the registers
     }
+    pub fn restoreOwnership(self: *LocalRegisterFrame, newFP: Address, core: *Core) void {
+        // we already have a match so just return!
+        if (self.valid) {
+            if (self.targetFramePointer == newFP) {
+                return;
+            } else {
+                // this is technically expensive because the valid bit is being
+                // checked twice, the upside is that I eliminate code
+                // duplication
+                self.trySaveRegisters(core);
+            }
+        }
+        // okay, so no match or is invalid
+        self.valid = true;
+        self.synchronizeOwnership(newFP);
+        var index: Address = self.targetFramePointer;
+        for (&self.contents) |*value| {
+            value.* = core.loadFromMemory(Ordinal, index);
+            index += 4;
+        }
+    }
 };
 
 // need to access byte by byte so we can reconstruct in a platform independent
@@ -1106,6 +1127,9 @@ const ArithmeticControls = packed struct {
     pub fn toWholeValue(self: *const ArithmeticControls) Ordinal {
         return @as(*Ordinal, @ptrCast(self)).*;
     }
+    pub fn setWholeValue(self: *ArithmeticControls, value: Ordinal) void {
+        @as(*Ordinal, @ptrCast(self)).* = value;
+    }
 };
 const ProcessControls = packed struct {
     @"trace enable": u1 = 0,
@@ -1124,6 +1148,12 @@ const ProcessControls = packed struct {
     @"internal state": u11 = 0,
     pub fn toWholeValue(self: *const ProcessControls) Ordinal {
         return @as(*Ordinal, @ptrCast(self)).*;
+    }
+    pub fn setWholeValue(self: *ProcessControls, value: Ordinal) void {
+        @as(*Ordinal, @ptrCast(self)).* = value;
+    }
+    pub fn inSupervisorMode(self: *const ProcessControls) bool {
+        return self.@"execution mode" != 0;
     }
 };
 
@@ -1148,6 +1178,9 @@ const TraceControls = packed struct {
 
     pub fn toWholeValue(self: *const TraceControls) Ordinal {
         return @as(*Ordinal, @ptrCast(self)).*;
+    }
+    pub fn setWholeValue(self: *TraceControls, value: Ordinal) void {
+        @as(*Ordinal, @ptrCast(self)).* = value;
     }
 };
 
@@ -1579,15 +1612,87 @@ const Core = struct {
         // necessary
         _ = self;
     }
+    fn leaveCall(self: *Core) void {
+        var pfpAddr = self.getRegisterValue(PFP);
+        pfpAddr &= 0xFFFFFF_C0; // mask the value to yield the proper return value
+        self.setRegisterValue(FP, pfpAddr);
+        self.getCurrentLocalFrame().relinquishOwnership(self);
+        var previousPack = self.currentLocalFrame;
+        previousPack = previousPack -% 1;
+        self.locals[previousPack].restoreOwnership(self.getRegisterValue(FP), self);
+        self.currentLocalFrame = previousPack;
+    }
+    fn restoreStandardFrame(self: *Core) void {
+        self.leaveCall();
+        self.restoreRIPToIP();
+        self.advanceBy = 0;
+    }
+    fn restoreRIPToIP(self: *Core) void {
+        self.ip = self.getRegisterValue(RIP);
+    }
+    fn localReturn(self: *Core) void {
+        self.restoreStandardFrame();
+    }
+    fn restoreACFromStack(self: *Core, fp: Address) Ordinal {
+        return self.loadFromMemory(Ordinal, fp - 12);
+    }
+    fn restorePCFromStack(self: *Core, fp: Address) Ordinal {
+        return self.loadFromMemory(Ordinal, fp - 16);
+    }
+    fn inSupervisorMode(self: *const Core) bool {
+        return self.pc.inSupervisorMode();
+    }
+    fn faultReturn(self: *Core) void {
+        const fp = self.getRegisterValue(FP);
+        const oldPC = self.restorePCFromStack(fp);
+        const oldAC = self.restoreACFromStack(fp);
+        self.restoreStandardFrame();
+        self.ac.setWholeValue(oldAC);
+        if (self.inSupervisorMode()) {
+            self.pc.setWholeValue(oldPC);
+        }
+    }
+    fn supervisorReturn(self: *Core, traceModeSetting: bool) void {
+        if (self.inSupervisorMode()) {
+            self.pc.@"trace enable" = if (traceModeSetting) 1 else 0;
+            self.pc.@"execution mode" = 0;
+        }
+        self.restoreStandardFrame();
+    }
+    fn checkForPendingInterrupts(self: *Core) void {
+        // @todo implement
+        _ = self;
+    }
+    fn interruptReturn(self: *Core) void {
+        const fp = self.getRegisterValue(FP);
+        const oldPC = self.restorePCFromStack(fp);
+        const oldAC = self.restoreACFromStack(fp);
+        self.restoreStandardFrame();
+        self.ac.setWholeValue(oldAC);
+        if (self.inSupervisorMode()) {
+            self.pc.setWholeValue(oldPC);
+            self.checkForPendingInterrupts();
+        }
+    }
+    fn ret(self: *Core) !void {
+        try self.syncf();
+        const pfpFull = self.getRegisterValue(PFP);
+        const rt: u3 = @truncate(pfpFull & 0b111);
+        switch (rt) {
+            0b000 => self.localReturn(),
+            0b001 => self.faultReturn(),
+            0b010 => self.supervisorReturn(false),
+            0b011 => self.supervisorReturn(true),
+            0b111 => self.interruptReturn(),
+            else => return error.Unimplemented,
+        }
+    }
 };
 fn computeBitpos(position: u5) Ordinal {
     return @as(Ordinal, 1) << position;
 }
 fn processInstruction(core: *Core, instruction: Instruction) !void {
     switch (try instruction.getOpcode()) {
-        DecodedOpcode.ret => {
-            try core.syncf();
-        },
         DecodedOpcode.b => core.relativeBranch(i24, instruction.ctrl.getDisplacement()),
         DecodedOpcode.bx => core.relativeBranch(i32, @bitCast(try core.computeEffectiveAddress(instruction))),
         DecodedOpcode.call,
@@ -2089,6 +2194,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
             // implicit syncf is performed but who cares for the simulator's
             // purposes
+            try core.syncf();
             const tempa = addr & (~(@as(Ordinal, 3)));
             const temp = core.atomicLoad(tempa);
             core.atomicStore(tempa, temp +% src);
@@ -2102,6 +2208,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const mask: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
             // implicit syncf is performed but who cares for the simulator's
             // purposes
+            try core.syncf();
             const tempa = addr & (~(@as(Ordinal, 3)));
             const temp = core.atomicLoad(tempa);
 
@@ -2248,6 +2355,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
                 x.relinquishOwnership(core);
             }
         },
+        DecodedOpcode.ret => try core.ret(),
 
         else => return error.Unimplemented,
     }
