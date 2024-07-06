@@ -2599,15 +2599,31 @@ test "core startup test" {
         .memory = buffer,
     };
     // make a fake PRCB
-    core.storeToMemory(Ordinal, 0x0, 0x0000_0600);
-    core.storeToMemory(Ordinal, 0x4, 0x0000_06c0);
-    core.storeToMemory(Ordinal, 0x8, 0);
-    core.storeToMemory(Ordinal, 0xc, 0x0000_0020);
-    core.storeToMemory(Ordinal, 0x10, 0xFFFF_F320);
-    core.storeToMemory(Ordinal, 0x14, 0);
-    core.storeToMemory(Ordinal, 0x18, 0);
-    core.storeToMemory(Ordinal, 0x1c, 0xFFFF_FFFF);
-    core.start() catch |x| {
-        try expect_eq(x, BootResult.ChecksumFail);
+    var bootWords = [8]Ordinal{
+        0x600,
+        0x6c0,
+        0,
+        0x20,
+        0xFFFF_F320,
+        0,
+        0,
+        0xFFFF_FFFF,
     };
+    for (bootWords, 0..) |word, idx| {
+        const adr: Address = @truncate(idx * @sizeOf(Ordinal));
+        core.storeToMemory(Ordinal, adr, word);
+    }
+    try core.start();
+    // hack bootwords and update
+    bootWords[6] = 128;
+    for (bootWords, 0..) |word, idx| {
+        const adr: Address = @truncate(idx * @sizeOf(Ordinal));
+        core.storeToMemory(Ordinal, adr, word);
+    }
+    if (core.start()) {
+        // there should be a checksum failure
+        return error.@"Expected Checksum to fail!";
+    } else |err| {
+        try expect_eq(err, BootResult.ChecksumFail);
+    }
 }
