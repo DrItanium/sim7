@@ -2195,6 +2195,7 @@ test "io system test" {
     });
     // store operations
     core.storeToMemory(ByteOrdinal, 0xFE00_0008, 'A');
+    core.storeToMemory(Ordinal, 0xFE00_0008, 'A');
     //core.storeToMemory(ByteOrdinal, 0xFE00_000C, 0);
     // only activate this one once I figure out a way to input data to standard in
     //try expect(core.loadFromMemory(Ordinal, 0xFE00_0008) != 0xFFFF_FFFF);
