@@ -1203,6 +1203,20 @@ const Core = struct {
         self.systemAddressTableBase = sat;
         self.prcbAddress = pcb;
         self.ip = startIP;
+
+        // fetch IMI
+        const theStackPointer = self.getInterruptStackAddress();
+        // get the interrupt stack pointer base since we are starting in an
+        // interrupt context
+        //
+        // set the frame pointer to the start of the interrupt stack
+        setRegisterValue(FramePointer, theStackPointer);
+        self.pc.priority = 31;
+        // The next value is considered to be a reserved state in the i960 MC
+        // manual but in the Sx/Kx manuals 0b01/0b1 is considered to be
+        // interrupted...good job intel... high quality documentation
+        self.pc.state = 1; // interrupted
+
     }
     fn newCycle(self: *Core) void {
         self.advanceBy = 4;
