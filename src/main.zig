@@ -1223,6 +1223,16 @@ const Core = struct {
     fn getCurrentLocalFrame(self: *Core) *LocalRegisterFrame {
         return &self.locals[self.currentLocalFrame];
     }
+    fn enterCall(self: *Core, fp: Ordinal) void {
+        // first step, we want to make sure that the current frame is owned by
+        // the current frame pointer, it will be holding onto the frame pointer
+        // to compare to. So we need to do an update
+        self.getCurrentLocalFrame().synchronizeOwnership(fp);
+        // get the next frame
+        const nextIdx = self.currentLocalFrame +% 1;
+        self.locals[nextIdx].takeOwnership(fp, self);
+        self.currentLocalFrame = nextIdx;
+    }
     fn performSelfTest(self: *Core) !void {
         _ = self;
     }
@@ -1383,13 +1393,6 @@ const Core = struct {
     }
     fn saveReturnAddress(self: *Core, dest: Operand) void {
         self.setRegisterValue(dest, self.ip + self.advanceBy);
-    }
-    fn newLocalRegisterFrame(self: *Core) void {
-        // if registerSetAvailable
-        // then allocate as new frame
-        // else save a register set in memory at its FP; allocate as new frame
-        _ = self;
-        // @todo implement
     }
     fn moveRegisterValue(self: *Core, dest: Operand, src: Operand) void {
         self.setRegisterValue(dest, self.getRegisterValue(src));
@@ -1570,12 +1573,21 @@ const Core = struct {
             else => error.NotMemInstruction,
         };
     }
+    fn syncf(self: *Core) !void {
+        // right now, there is no need for synchronizing faults but if I ever
+        // implement more advanced actions then a synchronization may be
+        // necessary
+        _ = self;
+    }
 };
 fn computeBitpos(position: u5) Ordinal {
     return @as(Ordinal, 1) << position;
 }
 fn processInstruction(core: *Core, instruction: Instruction) !void {
     switch (try instruction.getOpcode()) {
+        DecodedOpcode.ret => {
+            try core.syncf();
+        },
         DecodedOpcode.b => core.relativeBranch(i24, instruction.ctrl.getDisplacement()),
         DecodedOpcode.bx => core.relativeBranch(i32, @bitCast(try core.computeEffectiveAddress(instruction))),
         DecodedOpcode.call,
@@ -1583,19 +1595,22 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
         => |op| {
             // wait for any uncompleted instructions to finish
             const temp = (core.getRegisterValue(SP) + 63) & (~@as(Ordinal, 63)); // round to next boundary
+            const fp = core.getRegisterValue(FP);
             // save the return address to RIP in the _current_ frame
             core.saveReturnAddress(RIP);
-            core.newLocalRegisterFrame();
+            core.enterCall(fp);
             // at this point, all local register references are to the new
             // frame
+            // now update everything to be correct
+            core.moveRegisterValue(PFP, FP);
+            core.setRegisterValue(FP, temp);
+            core.setRegisterValue(SP, temp + 64);
+            // now we need to do the branching operation itself
             switch (op) {
                 DecodedOpcode.call => core.relativeBranch(i24, instruction.ctrl.getDisplacement()),
                 DecodedOpcode.callx => core.ip = try core.computeEffectiveAddress(instruction),
                 else => unreachable,
             }
-            core.moveRegisterValue(PFP, FP);
-            core.setRegisterValue(FP, temp);
-            core.setRegisterValue(SP, temp + 64);
         },
         DecodedOpcode.bal => {
             core.setRegisterValue(LinkRegister, core.ip + core.advanceBy);
@@ -1855,9 +1870,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
             core.setRegisterValue(srcDestIndex, alterbit(src, bitpos, (core.ac.@"condition code" & 0b010) == 0));
         },
-        DecodedOpcode.syncf => {
-            // do nothing
-        },
+        DecodedOpcode.syncf => try core.syncf(),
         DecodedOpcode.movl => {
             // be as simple as possible
             const src1Index = instruction.getSrc1() catch unreachable;
@@ -2230,7 +2243,11 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
                 core.setRegisterValue(srcDestIndex, (srcDest >> @truncate(bitpos)) & (~(@as(Ordinal, 0xFFFF_FFFF) << @truncate(len))));
             }
         },
-        DecodedOpcode.flushreg => {},
+        DecodedOpcode.flushreg => {
+            for (&core.locals) |*x| {
+                x.relinquishOwnership(core);
+            }
+        },
 
         else => return error.Unimplemented,
     }
