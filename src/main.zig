@@ -1165,12 +1165,19 @@ const TraceControls = packed struct {
 // there really isn't a point in keeping the instruction processing within the
 // Core structure
 
-const CPUClockRateAddress = 0x00_0000;
-const SystemClockRateAddress = 0x00_0004;
-const SerialIOAddress = 0x00_0008;
-const SerialFlushAddress = 0x00_000C;
+const CPUClockRateAddress = 0xFE00_0000;
+const SystemClockRateAddress = 0xFE00_0004;
+const SerialIOAddress = 0xFE00_0008;
+const SerialFlushAddress = 0xFE00_000C;
+const MillisecondsTimestampAddress = 0xFE00_0040;
+const MicrosecondsTimestampAddress = 0xFE00_0044;
+const NanosecondsTimestampAddress = 0xFE00_0048;
 const SystemClockRate: Ordinal = 20 * 1000 * 1000;
 const CPUClockRate: Ordinal = SystemClockRate / 2;
+const IOSpaceMemoryUnderlayStart = 0xFE10_0000;
+const IOSpaceMemoryUnderlayEnd = 0xFEFF_FFFF;
+const IOSpaceStart = 0xFE00_0000;
+const IOSpaceEnd = 0xFEFF_FFFF;
 const Core = struct {
     memory: *MemoryPool = undefined,
     globals: RegisterFrame = RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -1298,9 +1305,8 @@ const Core = struct {
         addr: Address,
         value: T,
     ) void {
-        const target: u24 = @truncate(addr);
-        switch (target) {
-            0x10_0000...0xFF_FFFF => store(T, self.memory, addr, value),
+        switch (addr) {
+            IOSpaceMemoryUnderlayStart...IOSpaceMemoryUnderlayEnd => store(T, self.memory, addr, value),
             SerialIOAddress => {
                 // putc
                 switch (T) {
@@ -1328,9 +1334,8 @@ const Core = struct {
         comptime T: type,
         addr: Address,
     ) T {
-        const target: u24 = @truncate(addr);
-        return switch (target) {
-            0x10_0000...0xFF_FFFF => load(T, self.memory, addr),
+        return switch (addr) {
+            IOSpaceMemoryUnderlayStart...IOSpaceMemoryUnderlayEnd => load(T, self.memory, addr),
             CPUClockRateAddress => switch (T) {
                 Ordinal, Integer => CPUClockRate,
                 else => 0,
@@ -1355,29 +1360,21 @@ const Core = struct {
                 => stdin.readByteSigned() catch @as(T, math.minInt(T)),
                 else => @compileError("Unsupported load types provided"),
             },
-            0x00_0040, 0x00_0044 => {
+            MicrosecondsTimestampAddress, MillisecondsTimestampAddress => scope: {
                 // strange packed alignment work happens here so you can get a
                 // 64-bit value out based on the base alignment
                 switch (@typeInfo(T)) {
                     .Int => |info| {
-                        const tval = switch (target) {
-                            0x00_0040 => std.time.milliTimestamp(),
-                            0x00_0044 => std.time.microTimestamp(),
+                        const tval = switch (comptime addr) {
+                            MillisecondsTimestampAddress => std.time.milliTimestamp(),
+                            MicrosecondsTimestampAddress => std.time.microTimestamp(),
                             else => unreachable,
                         };
                         if (info.signedness == std.builtin.Signedness.signed) {
-                            if (info.bits >= 64) {
-                                return tval;
-                            } else {
-                                return @truncate(tval);
-                            }
+                            break :scope if (info.bits >= 64) tval else @truncate(tval);
                         } else {
                             const val: u64 = @bitCast(tval);
-                            if (info.bits >= 64) {
-                                return val;
-                            } else {
-                                return @truncate(val);
-                            }
+                            break :scope if (info.bits >= 64) val else @truncate(val);
                         }
                     },
                     else => @compileError("unsupported load type provided"),
@@ -1392,7 +1389,7 @@ const Core = struct {
         addr: Address,
     ) T {
         return switch (addr) {
-            0xFE00_0000...0xFEFF_FFFF => self.loadFromIOMemory(T, addr),
+            IOSpaceStart...IOSpaceEnd => self.loadFromIOMemory(T, addr),
             else => load(T, self.memory, addr),
         };
     }
@@ -1404,7 +1401,7 @@ const Core = struct {
     ) void {
         switch (addr) {
             // io space detection
-            0xFE00_0000...0xFEFF_FFFF => self.storeToIOMemory(T, addr, value),
+            IOSpaceStart...IOSpaceEnd => self.storeToIOMemory(T, addr, value),
             else => store(T, self.memory, addr, value),
         }
     }
@@ -2182,17 +2179,21 @@ test "io system test" {
     var core = Core{
         .memory = undefined,
     };
-    try expect_eq(core.loadFromMemory(Ordinal, 0xFE00_0000), 10 * 1000 * 1000);
-    try expect_eq(core.loadFromMemory(Ordinal, 0xFE00_0004), 20 * 1000 * 1000);
-    try expect(core.loadFromMemory(Ordinal, 0xFE00_0040) != 0);
-    try expect(core.loadFromMemory(Ordinal, 0xFE00_0044) != 0);
-    std.debug.print("\n\n0x{x}\n0x{x}\n", .{
-        core.loadFromMemory(Ordinal, 0xFE00_0040),
-        core.loadFromMemory(Ordinal, 0xFE00_0044),
+    const compareMilli = std.time.milliTimestamp();
+    const compareMicro = std.time.microTimestamp();
+    try expect_eq(core.loadFromMemory(Ordinal, CPUClockRateAddress), CPUClockRate);
+    try expect_eq(core.loadFromMemory(Ordinal, SystemClockRateAddress), SystemClockRate);
+    try expect(core.loadFromMemory(LongInteger, MillisecondsTimestampAddress) >= compareMilli);
+    try expect(core.loadFromMemory(LongInteger, MicrosecondsTimestampAddress) >= compareMicro);
+    std.debug.print("\n\n0x{x} vs 0x{x}\n0x{x} vs 0x{x}\n", .{
+        core.loadFromMemory(LongInteger, MillisecondsTimestampAddress),
+        compareMilli,
+        core.loadFromMemory(LongInteger, MicrosecondsTimestampAddress),
+        compareMicro,
     });
     // store operations
-    core.storeToMemory(ByteOrdinal, 0xFE00_0008, 'A');
-    core.storeToMemory(Ordinal, 0xFE00_0008, 'A');
+    core.storeToMemory(ByteOrdinal, SerialIOAddress, 'A');
+    core.storeToMemory(Ordinal, SerialIOAddress, 'A');
     //core.storeToMemory(ByteOrdinal, 0xFE00_000C, 0);
     // only activate this one once I figure out a way to input data to standard in
     //try expect(core.loadFromMemory(Ordinal, 0xFE00_0008) != 0xFFFF_FFFF);
