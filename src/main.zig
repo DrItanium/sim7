@@ -1334,10 +1334,37 @@ const Core = struct {
                         const resultant: theType = midpoint;
                         return if (numRead != @sizeOf(theType)) @as(theType, math.minInt(theType)) else resultant;
                     },
-                    else => @as(T, math.minInt(T)),
+                    else => @compileError("Unsupported load types provided"),
                 }
             },
-
+            0x00_0040, 0x00_0044 => {
+                // strange packed alignment work happens here so you can get a
+                // 64-bit value out based on the base alignment
+                switch (@typeInfo(T)) {
+                    .Int => |info| {
+                        const tval = switch (target) {
+                            0x00_0040 => std.time.milliTimestamp(),
+                            0x00_0044 => std.time.microTimestamp(),
+                            else => unreachable,
+                        };
+                        if (info.signedness == std.builtin.Signedness.signed) {
+                            if (info.bits > 64) {
+                                return tval;
+                            } else {
+                                return @truncate(tval);
+                            }
+                        } else {
+                            const val: u64 = @bitCast(tval);
+                            if (info.bits > 64) {
+                                return val;
+                            } else {
+                                return @truncate(val);
+                            }
+                        }
+                    },
+                    else => @compileError("unsupported load type provided"),
+                }
+            },
             else => 0,
         };
     }
