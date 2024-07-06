@@ -2188,6 +2188,14 @@ pub fn main() !void {
 }
 
 // test cases
+test "io system test" {
+    var core = Core{
+        .memory = undefined,
+    };
+    try expect_eq(core.loadFromMemory(Ordinal, 0xFE00_0004), 20 * 1000 * 1000);
+    try expect_eq(core.loadFromMemory(Ordinal, 0xFE00_0000), 10 * 1000 * 1000);
+    //core.storeToMemory(ByteOrdinal, 0xFE00_0004, 'a');
+}
 
 test "Opcodes Sanity Checks" {
     try expect(@intFromEnum(DecodedOpcode.cmpibo) == 0x3f);
