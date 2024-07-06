@@ -60,6 +60,10 @@ const LocalRegisterFrame = struct {
     contents: RegisterFrame = RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
     targetFramePointer: Address = 0,
     valid: bool = false,
+    fn relinquishOwnership(self: *LocalRegisterFrame) void {
+        self.valid = false;
+        self.synchronizeOwnership(0);
+    }
     fn synchronizeOwnership(self: *LocalRegisterFrame, val: Address) void {
         self.targetFramePointer = val;
     }
@@ -1148,12 +1152,18 @@ const IOSpaceEnd = 0xFEFF_FFFF;
 const Core = struct {
     memory: *MemoryPool = undefined,
     globals: RegisterFrame = RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-    locals: [4]RegisterFrame = [_]RegisterFrame{
-        RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-        RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-        RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-        RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+    locals: [4]LocalRegisterFrame = [_]LocalRegisterFrame{
+        LocalRegisterFrame{},
+        LocalRegisterFrame{},
+        LocalRegisterFrame{},
+        LocalRegisterFrame{},
     },
+    //locals: [4]RegisterFrame = [_]RegisterFrame{
+    //    RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+    //    RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+    //    RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+    //    RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+    //},
     // @todo link the size of this field to the number of local register frames
     currentLocalFrame: u2 = 0,
     fpr: [4]ExtendedReal = [_]ExtendedReal{ 0.0, 0.0, 0.0, 0.0 },
@@ -1163,6 +1173,13 @@ const Core = struct {
     ac: ArithmeticControls = @bitCast(@as(u32, 0)),
     tc: TraceControls = @bitCast(@as(u32, 0)),
     continueExecuting: bool = true,
+    systemAddressTableBase: Ordinal = 0,
+    prcbAddress: Ordinal = 0,
+    fn boot0(self: *Core, sat: Address, pcb: Address, startIP: Address) void {
+        self.systemAddressTableBase = sat;
+        self.prcbAddress = pcb;
+        self.ip = startIP;
+    }
     fn newCycle(self: *Core) void {
         self.advanceBy = 4;
     }
@@ -1176,7 +1193,7 @@ const Core = struct {
         if (index > 16) {
             return &self.globals[index & 0b1111];
         } else {
-            return &self.locals[self.currentLocalFrame][index & 0b1111];
+            return &self.locals[self.currentLocalFrame].contents[index & 0b1111];
         }
     }
 
@@ -2127,7 +2144,7 @@ pub fn main() !void {
     // part of the system tests
     const message = "i960 Simulator\n";
     for (message) |x| {
-        core.storeToMemory(@TypeOf(x), 0xFE00_0008, x);
+        core.storeToMemory(@TypeOf(x), SerialIOAddress, x);
     }
     while (core.continueExecuting) {
         core.newCycle();
@@ -2439,4 +2456,25 @@ test "allocation test2" {
     try expect_eq(buffer2[1], 0x01);
     try expect_eq(buffer2[2], 0x02);
     try expect_eq(buffer2[3], 0x03);
+}
+test "add/subtract index test" {
+    // this is a sanity check to make sure that my understanding of zig
+    // overflow semantics is correct
+    var ind: u2 = 0;
+    ind = ind -% 1;
+    try expect_eq(ind, 0b11);
+    ind = ind -% 1;
+    try expect_eq(ind, 0b10);
+    ind = ind -% 1;
+    try expect_eq(ind, 0b01);
+    ind = ind -% 1;
+    try expect_eq(ind, 0b00);
+    ind = ind +% 1;
+    try expect_eq(ind, 0b01);
+    ind = ind +% 1;
+    try expect_eq(ind, 0b10);
+    ind = ind +% 1;
+    try expect_eq(ind, 0b11);
+    ind = ind +% 1;
+    try expect_eq(ind, 0b00);
 }
