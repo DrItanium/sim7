@@ -25,6 +25,8 @@ const std = @import("std");
 const meta = @import("std").meta;
 const math = @import("std").math;
 const io = std.io;
+const stdin = io.getStdIn();
+const stdout = io.getStdOut();
 
 const expect = std.testing.expect;
 const expect_eq = std.testing.expectEqual;
@@ -1295,13 +1297,47 @@ const Core = struct {
         return switch (target) {
             0x10_0000...0xFF_FFFF => load(T, self.memory, addr),
             0x00_0000 => switch (T) {
-                Ordinal => clockRate,
+                Ordinal, Integer => clockRate,
                 else => 0,
             },
             0x00_0004 => switch (T) {
-                Ordinal => fullRate,
+                Ordinal, Integer => fullRate,
                 else => 0,
             },
+            0x00_0008 => {
+                // getc
+                var storage: [1]u8 = undefined;
+                storage[0] = 0;
+                switch (T) {
+                    // read from standard input
+                    ByteOrdinal,
+                    ShortOrdinal,
+                    Ordinal,
+                    LongOrdinal,
+                    TripleOrdinal,
+                    QuadOrdinal,
+                    => |theType| {
+                        const numRead = stdin.read(&storage) catch {
+                            return @as(theType, math.maxInt(theType));
+                        };
+                        return if (numRead != @sizeOf(theType)) @as(theType, math.maxInt(theType)) else storage[0];
+                    },
+                    ByteInteger,
+                    ShortInteger,
+                    Integer,
+                    LongInteger,
+                    => |theType| {
+                        const numRead = stdin.read(&storage) catch {
+                            return @as(theType, math.minInt(theType));
+                        };
+                        const midpoint: ByteInteger = @bitCast(storage[0]);
+                        const resultant: theType = midpoint;
+                        return if (numRead != @sizeOf(theType)) @as(theType, math.minInt(theType)) else resultant;
+                    },
+                    else => @as(T, math.minInt(T)),
+                }
+            },
+
             else => 0,
         };
     }
