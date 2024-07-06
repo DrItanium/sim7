@@ -251,15 +251,18 @@ const InstructionClass = enum(u2) {
     COBR,
     REG,
     MEM,
+    fn determine(opcode: u8) InstructionClass {
+        return switch (comptime opcode) {
+            0x00...0x1F => InstructionClass.CTRL,
+            0x20...0x3F => InstructionClass.COBR,
+            0x40...0x7F => InstructionClass.REG,
+            0x80...0xFF => InstructionClass.MEM,
+        };
+    }
 };
 
 pub fn determineInstructionClass(opcode: u8) InstructionClass {
-    return switch (opcode) {
-        0x00...0x1F => InstructionClass.CTRL,
-        0x20...0x3F => InstructionClass.COBR,
-        0x40...0x7F => InstructionClass.REG,
-        0x80...0xFF => InstructionClass.MEM,
-    };
+    return InstructionClass.determine(opcode);
 }
 pub const DecodedOpcode = enum(u12) {
     b = 0x8,
@@ -566,7 +569,7 @@ pub const DecodedOpcode = enum(u12) {
         });
     }
     pub fn getInstructionClass(self: DecodedOpcode) InstructionClass {
-        return comptime determineInstructionClass(self.getPrimaryOpcode());
+        return determineInstructionClass(self.getPrimaryOpcode());
     }
     pub fn getArchitectureLevel(self: DecodedOpcode) ArchitectureLevel {
         return switch (self) {
@@ -683,7 +686,7 @@ pub const DecodedOpcode = enum(u12) {
         };
     }
     pub fn isFloatingPointInstruction(self: DecodedOpcode) bool {
-        return switch (self) {
+        return switch (comptime self) {
             DecodedOpcode.cvtir,
             DecodedOpcode.cvtilr,
             DecodedOpcode.scalerl,
@@ -986,7 +989,7 @@ fn decode(opcode: Ordinal) Instruction {
         InstructionClass.REG => Instruction{
             .reg = @as(*const REGInstruction, @ptrCast(&opcode)).*,
         },
-        InstructionClass.MEM => if (determinant.memDeterminant == 1) Instruction{
+        InstructionClass.MEM => if (determinant.isMEMBInstruction()) Instruction{
             .memb = @as(*const MEMBInstruction, @ptrCast(&opcode)).*,
         } else Instruction{
             .mema = @as(*const MEMAInstruction, @ptrCast(&opcode)).*,
