@@ -1165,6 +1165,12 @@ const TraceControls = packed struct {
 // there really isn't a point in keeping the instruction processing within the
 // Core structure
 
+const CPUClockRateAddress = 0x00_0000;
+const SystemClockRateAddress = 0x00_0004;
+const SerialIOAddress = 0x00_0008;
+const SerialFlushAddress = 0x00_000C;
+const SystemClockRate: Ordinal = 20 * 1000 * 1000;
+const CPUClockRate: Ordinal = SystemClockRate / 2;
 const Core = struct {
     memory: *MemoryPool = undefined,
     globals: RegisterFrame = RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -1295,7 +1301,7 @@ const Core = struct {
         const target: u24 = @truncate(addr);
         switch (target) {
             0x10_0000...0xFF_FFFF => store(T, self.memory, addr, value),
-            0x00_0008 => {
+            SerialIOAddress => {
                 // putc
                 switch (T) {
                     // read from standard input
@@ -1313,7 +1319,7 @@ const Core = struct {
                     else => @compileError("Unsupported load types provided"),
                 }
             },
-            //0x00_000C => stdout.sync() catch {},
+            //SerialFlushAddress => stdout.sync() catch {},
             else => {},
         }
     }
@@ -1322,41 +1328,32 @@ const Core = struct {
         comptime T: type,
         addr: Address,
     ) T {
-        const clockRate: Ordinal = 10 * 1000 * 1000;
-        const fullRate: Ordinal = 20 * 1000 * 1000;
         const target: u24 = @truncate(addr);
         return switch (target) {
             0x10_0000...0xFF_FFFF => load(T, self.memory, addr),
-            0x00_0000 => switch (T) {
-                Ordinal, Integer => clockRate,
+            CPUClockRateAddress => switch (T) {
+                Ordinal, Integer => CPUClockRate,
                 else => 0,
             },
-            0x00_0004 => switch (T) {
-                Ordinal, Integer => fullRate,
+            SystemClockRateAddress => switch (T) {
+                Ordinal, Integer => SystemClockRate,
                 else => 0,
             },
-            0x00_0008 => {
-                // getc
-                switch (T) {
-                    // read from standard input
-                    ByteOrdinal,
-                    ShortOrdinal,
-                    Ordinal,
-                    LongOrdinal,
-                    TripleOrdinal,
-                    QuadOrdinal,
-                    => |theType| return stdin.readByte() catch {
-                        return @as(theType, math.maxInt(theType));
-                    },
-                    ByteInteger,
-                    ShortInteger,
-                    Integer,
-                    LongInteger,
-                    => |theType| return stdin.readByteSigned() catch {
-                        return @as(theType, math.minInt(theType));
-                    },
-                    else => @compileError("Unsupported load types provided"),
-                }
+            SerialIOAddress => switch (T) {
+                // read from standard input
+                ByteOrdinal,
+                ShortOrdinal,
+                Ordinal,
+                LongOrdinal,
+                TripleOrdinal,
+                QuadOrdinal,
+                => stdin.readByte() catch @as(T, math.maxInt(T)),
+                ByteInteger,
+                ShortInteger,
+                Integer,
+                LongInteger,
+                => stdin.readByteSigned() catch @as(T, math.minInt(T)),
+                else => @compileError("Unsupported load types provided"),
             },
             0x00_0040, 0x00_0044 => {
                 // strange packed alignment work happens here so you can get a
@@ -2157,12 +2154,12 @@ pub fn main() !void {
     const allocator = std.heap.page_allocator;
     const buffer = try allocator.create(MemoryPool);
     defer allocator.destroy(buffer);
-    var core = Core{
-        .memory = buffer,
-    };
     for (buffer) |*cell| {
         cell.* = 0;
     }
+    var core = Core{
+        .memory = buffer,
+    };
     // part of the system tests
     const message = "i960 Simulator\n";
     for (message) |x| {
