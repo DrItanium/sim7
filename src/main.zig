@@ -261,9 +261,6 @@ const InstructionClass = enum(u2) {
     }
 };
 
-pub fn determineInstructionClass(opcode: u8) InstructionClass {
-    return InstructionClass.determine(opcode);
-}
 pub const DecodedOpcode = enum(u12) {
     b = 0x8,
     call,
@@ -569,7 +566,7 @@ pub const DecodedOpcode = enum(u12) {
         });
     }
     pub fn getInstructionClass(self: DecodedOpcode) InstructionClass {
-        return determineInstructionClass(self.getPrimaryOpcode());
+        return InstructionClass.determine(self.getPrimaryOpcode());
     }
     pub fn getArchitectureLevel(self: DecodedOpcode) ArchitectureLevel {
         return switch (self) {
@@ -891,23 +888,17 @@ const InstructionDeterminant = packed struct {
     unused1: u11,
     opcode: u8,
 
-    pub fn isCTRLInstruction(self: *const InstructionDeterminant) bool {
-        return determineInstructionClass(self.opcode) == InstructionClass.CTRL;
-    }
-    pub fn isCOBRInstruction(self: *const InstructionDeterminant) bool {
-        return determineInstructionClass(self.opcode) == InstructionClass.COBR;
-    }
-    pub fn isREGInstruction(self: *const InstructionDeterminant) bool {
-        return determineInstructionClass(self.opcode) == InstructionClass.REG;
-    }
     pub fn isMEMInstruction(self: *const InstructionDeterminant) bool {
-        return determineInstructionClass(self.opcode) == InstructionClass.MEM;
+        return self.determineClass() == InstructionClass.MEM;
     }
     pub fn isMEMAInstruction(self: *const InstructionDeterminant) bool {
         return self.isMEMInstruction() and (self.memDeterminant == 0);
     }
     pub fn isMEMBInstruction(self: *const InstructionDeterminant) bool {
         return self.isMEMInstruction() and (self.memDeterminant == 1);
+    }
+    fn determineClass(self: *const InstructionDeterminant) InstructionClass {
+        return InstructionClass.determine(self.opcode);
     }
 };
 
@@ -917,29 +908,6 @@ const Instruction = union(enum) {
     reg: REGInstruction,
     mema: MEMAInstruction,
     memb: MEMBInstruction,
-    pub fn getRegisterArguments(self: *const Instruction) ![]Operand {
-        return switch (self.*) {
-            .ctrl => [_]Operand{},
-            .cobr => |k| [_]Operand{
-                k.src1,
-                self.src2,
-            },
-            .reg => |k| [_]Operand{
-                k.srcDest,
-                k.src1,
-                k.src2,
-            },
-            .mema => |k| [_]Operand{
-                k.srcDest,
-                k.abase,
-            },
-            .memb => |k| [_]Operand{
-                k.srcDest,
-                k.abase,
-                k.index,
-            },
-        };
-    }
     pub fn getOpcode(self: *const Instruction) !DecodedOpcode {
         return switch (self.*) {
             .ctrl => |k| k.getOpcode(),
@@ -960,8 +928,6 @@ const Instruction = union(enum) {
     pub fn getSrc1(self: *const Instruction) !Operand {
         return switch (self.*) {
             .reg => |k| k.src1,
-            //.mema => |k| k.src1,
-            //.memb => |k| k.src1,
             .cobr => |k| k.src1,
             else => error.NoArgument,
         };
@@ -969,8 +935,6 @@ const Instruction = union(enum) {
     pub fn getSrc2(self: *const Instruction) !Operand {
         return switch (self.*) {
             .reg => |k| k.src2,
-            //.mema => |k| k.src2,
-            //.memb => |k| k.src2,
             .cobr => |k| k.src2,
             else => error.NoArgument,
         };
@@ -979,7 +943,7 @@ const Instruction = union(enum) {
 
 fn decode(opcode: Ordinal) Instruction {
     const determinant: *const InstructionDeterminant = @ptrCast(&opcode);
-    return switch (determineInstructionClass(determinant.opcode)) {
+    return switch (determinant.determineClass()) {
         InstructionClass.CTRL => Instruction{
             .ctrl = @as(*const CTRLInstruction, @ptrCast(&opcode)).*,
         },
