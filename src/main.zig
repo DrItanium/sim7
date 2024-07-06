@@ -1010,8 +1010,14 @@ const RIP: Operand = 2;
 const LinkRegister: Operand = 30; // g14
 const FramePointer: Operand = 31;
 const FP = FramePointer;
-fn getPFPAddress(value: Ordinal) Ordinal {
-    return value & 0xFFFFFFF0;
+const PreviousFramePointer = packed struct {
+    rt: u3 = 0,
+    p: u1 = 0,
+    unused: u2 = 0, // used by the Hx processors but not Kx/Sx/Mx processors
+    address: u26 = 0,
+};
+test "check PreviousFramePointer" {
+    try expect_eq(@sizeOf(PreviousFramePointer), @sizeOf(Ordinal));
 }
 const GenericSegmentDescriptor = packed struct {
     reserved: u64 = 0,
@@ -1229,6 +1235,12 @@ const Core = struct {
     continueExecuting: bool = true,
     systemAddressTableBase: Ordinal = 0,
     prcbAddress: Ordinal = 0,
+    fn getSystemProcedureTableBase(self: *Core) Ordinal {
+        return self.loadFromMemory(Ordinal, self.systemAddressTableBase + 120);
+    }
+    fn getSupervisorStackPointer(self: *Core) Ordinal {
+        return self.loadFromMemory(Ordinal, self.systemAddressTableBase + 12);
+    }
     fn loadFromPRCB(self: *Core, offset: u8) Ordinal {
         return self.loadFromMemory(Ordinal, self.prcbAddress + offset);
     }
@@ -1687,6 +1699,13 @@ const Core = struct {
             else => return error.Unimplemented,
         }
     }
+    fn balx(self: *Core, targ: i32, dest: Operand) void {
+
+        // compute the effective address first since the link register
+        // could be included in the computation
+        self.setRegisterValue(dest, self.ip + self.advanceBy);
+        self.relativeBranch(i32, targ);
+    }
 };
 fn computeBitpos(position: u5) Ordinal {
     return @as(Ordinal, 1) << position;
@@ -1722,11 +1741,26 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             core.relativeBranch(i24, instruction.ctrl.getDisplacement());
         },
         DecodedOpcode.balx => {
-            // compute the effective address first since the link register
-            // could be included in the computation
-            const destination = try core.computeEffectiveAddress(instruction);
-            core.setRegisterValue(LinkRegister, core.ip + core.advanceBy);
-            core.relativeBranch(i32, @bitCast(destination));
+            const targ: i32 = @bitCast(try core.computeEffectiveAddress(instruction));
+            const dest = instruction.getSrcDest() catch unreachable;
+            try core.balx(targ, targ, dest);
+        },
+        DecodedOpcode.calls => {
+            const src1Index = instruction.getSrc1() catch unreachable;
+            const targ: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
+            if (targ > 259) {
+                return error.ProtectionLengthFault;
+            }
+            try core.syncf();
+            const tempPE = core.loadFromMemory(Ordinal, core.getSystemProcedureTableBase() + 48 + (4 * targ));
+            //const typ : u2 = @truncate(tempPE & 0b11);
+            const procedureAddress = tempPE & 0xFFFFFFFC;
+            core.balx(procedureAddress, RIP);
+            //var tmp : Ordinal = 0;
+            //const fp = core.getRegisterValue(FP);
+
+            // @todo finish this implementation
+            return error.Unimplemented;
         },
         DecodedOpcode.bno => {
             if (core.ac.@"condition code" == 0b000) {
@@ -2214,16 +2248,6 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
 
             core.atomicStore(tempa, (addr & mask) | (temp & ~mask));
             core.setRegisterValue(destIndex, temp);
-        },
-        DecodedOpcode.calls => {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const targ: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
-            if (targ > 259) {
-                return error.ProtectionLengthFault;
-            } else {
-                // @todo finish this implementation
-                return error.Unimplemented;
-            }
         },
         DecodedOpcode.cmpstr => {
             const src1Index = instruction.getSrc1() catch unreachable;
