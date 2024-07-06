@@ -2163,6 +2163,7 @@ pub fn main() !void {
     for (buffer) |*cell| {
         cell.* = 0;
     }
+    // part of the system tests
     const message = "i960 Simulator\n";
     for (message) |x| {
         core.storeToMemory(@TypeOf(x), 0xFE00_0008, x);
