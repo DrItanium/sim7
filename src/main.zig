@@ -1330,12 +1330,12 @@ const Core = struct {
         return switch (target) {
             0x10_0000...0xFF_FFFF => load(T, self.memory, addr),
             0x00_0000 => switch (T) {
-                Ordinal, Integer => return clockRate,
-                else => return 0,
+                Ordinal, Integer => clockRate,
+                else => 0,
             },
             0x00_0004 => switch (T) {
-                Ordinal, Integer => return fullRate,
-                else => return 0,
+                Ordinal, Integer => fullRate,
+                else => 0,
             },
             0x00_0008 => {
                 // getc
