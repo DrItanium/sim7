@@ -24,6 +24,7 @@
 const std = @import("std");
 const meta = @import("std").meta;
 const math = @import("std").math;
+const io = std.io;
 
 const expect = std.testing.expect;
 const expect_eq = std.testing.expectEqual;
@@ -1283,13 +1284,34 @@ const Core = struct {
     fn moveRegisterValue(self: *Core, dest: Operand, src: Operand) void {
         self.setRegisterValue(dest, self.getRegisterValue(src));
     }
+    fn loadFromIOMemory(
+        self: *Core,
+        comptime T: type,
+        addr: Address,
+    ) T {
+        const clockRate: Ordinal = 10 * 1000 * 1000;
+        const fullRate: Ordinal = 20 * 1000 * 1000;
+        const target: u24 = @truncate(addr);
+        return switch (target) {
+            0x10_0000...0xFF_FFFF => load(T, self.memory, addr),
+            0x00_0000 => switch (T) {
+                Ordinal => clockRate,
+                else => 0,
+            },
+            0x00_0004 => switch (T) {
+                Ordinal => fullRate,
+                else => 0,
+            },
+            else => 0,
+        };
+    }
     fn loadFromMemory(
         self: *Core,
         comptime T: type,
         addr: Address,
     ) T {
         return switch (addr) {
-            0xFE00_0000...0xFEFF_FFFF => 0,
+            0xFE00_0000...0xFEFF_FFFF => self.loadFromIOMemory(T, addr),
             else => load(T, self.memory, addr),
         };
     }
@@ -1320,7 +1342,6 @@ const Core = struct {
         // @todo implement atomic locking support
         self.storeToMemory(Ordinal, addr, value);
     }
-
     fn computeEffectiveAddress(
         self: *Core,
         instruction: Instruction,
