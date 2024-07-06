@@ -1175,6 +1175,30 @@ const Core = struct {
     continueExecuting: bool = true,
     systemAddressTableBase: Ordinal = 0,
     prcbAddress: Ordinal = 0,
+    fn loadFromPRCB(self: *Core, offset: u8) Ordinal {
+        return self.loadFromMemory(Ordinal, self.prcbAddress + offset);
+    }
+    fn getProcessorControls(self: *Core) Ordinal {
+        return self.loadFromPRCB(4);
+    }
+    fn getCurrentProcessSegmentSelector(self: *Core) Ordinal {
+        return self.loadFromPRCB(12);
+    }
+    fn getDispatchPortSegmentSelector(self: *Core) Ordinal {
+        return self.loadFromPRCB(16);
+    }
+    fn getInterruptTablePointer(self: *Core) Address {
+        return self.loadFromPRCB(20);
+    }
+    fn getInterruptStackAddress(self: *Core) Address {
+        return self.loadFromPRCB(24);
+    }
+    fn getSystemProcedureTableSegmentSelector(self: *Core) Address {
+        return self.loadFromPRCB(36);
+    }
+    fn getFaultTableBaseAddress(self: *Core) Address {
+        return self.loadFromPRCB(40);
+    }
     fn boot0(self: *Core, sat: Address, pcb: Address, startIP: Address) void {
         self.systemAddressTableBase = sat;
         self.prcbAddress = pcb;
