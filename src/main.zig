@@ -55,28 +55,46 @@ fn StorageFrame(
 }
 
 const RegisterFrame = StorageFrame(Ordinal, 16);
+const MemoryPool = StorageFrame(ByteOrdinal, 4 * 1024 * 1024 * 1024);
 
 const LocalRegisterFrame = struct {
     contents: RegisterFrame = RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
     targetFramePointer: Address = 0,
     valid: bool = false,
-    fn relinquishOwnership(self: *LocalRegisterFrame) void {
+    fn trySaveRegisters(self: *LocalRegisterFrame, core: *Core) void {
+        if (self.valid) {
+            var index: Address = self.targetFramePointer;
+            for (self.contents) |value| {
+                core.storeToMemory(Ordinal, index, value);
+                index += 4;
+            }
+        }
+    }
+    fn relinquishOwnership(self: *LocalRegisterFrame, core: *Core) void {
+        self.trySaveRegisters(core);
         self.valid = false;
         self.synchronizeOwnership(0);
+        // should we clear registers? it would be a state leak...
+        // I don't think i960 does that
     }
     fn synchronizeOwnership(self: *LocalRegisterFrame, val: Address) void {
         self.targetFramePointer = val;
     }
     fn clear(self: *LocalRegisterFrame) void {
-        for (self.contents) |*cell| {
+        for (&self.contents) |*cell| {
             cell.* = 0;
         }
     }
     fn isValid(self: *LocalRegisterFrame) bool {
         return self.valid;
     }
+    pub fn takeOwnership(self: *LocalRegisterFrame, newFP: Address, core: *Core) void {
+        self.trySaveRegisters(core);
+        self.valid = true;
+        self.synchronizeOwnership(newFP);
+        // don't clear out the registers
+    }
 };
-const MemoryPool = StorageFrame(ByteOrdinal, 4 * 1024 * 1024 * 1024);
 
 // need to access byte by byte so we can reconstruct in a platform independent
 // way
@@ -1135,7 +1153,10 @@ const TraceControls = packed struct {
 
 // there really isn't a point in keeping the instruction processing within the
 // Core structure
-
+const BootResult = error{
+    ChecksumFail,
+    SelfTestFailure,
+};
 const CPUClockRateAddress = 0xFE00_0000;
 const SystemClockRateAddress = 0xFE00_0004;
 const SerialIOAddress = 0xFE00_0008;
@@ -1199,6 +1220,47 @@ const Core = struct {
     fn getFaultTableBaseAddress(self: *Core) Address {
         return self.loadFromPRCB(40);
     }
+    fn getCurrentLocalFrame(self: *Core) *LocalRegisterFrame {
+        return &self.locals[self.currentLocalFrame];
+    }
+    fn performSelfTest(self: *Core) !void {
+        _ = self;
+    }
+    fn deassertFailureState(self: *Core) void {
+        _ = self;
+        // do nothing
+    }
+    fn assertFailureState(self: *Core) void {
+        _ = self;
+        // do nothing
+    }
+    pub fn start(self: *Core) BootResult!void {
+        try self.performSelfTest();
+        self.deassertFailureState();
+        var storage: [8]Ordinal = undefined;
+        var i: Address = 0;
+        var j: Address = 0;
+        while (i < 8) : ({
+            i += 1;
+            j += 4;
+        }) {
+            storage[i] = self.loadFromMemory(Ordinal, j);
+        }
+        var temp: Ordinal = 0xFFFF_FFFF;
+        var carry: u1 = 0;
+        for (storage) |value| {
+            const intermediate = @addWithOverflow(temp, value);
+            const finalOutput = @addWithOverflow(intermediate[0], carry);
+            temp = finalOutput[0];
+            carry = finalOutput[1] | intermediate[1];
+        }
+        if (temp != 0) {
+            self.assertFailureState();
+            //std.debug.print("Got Checksum: 0x{x}\n", .{temp});
+            return BootResult.ChecksumFail;
+        }
+        self.boot0(storage[0], storage[1], storage[3]);
+    }
     fn boot0(self: *Core, sat: Address, pcb: Address, startIP: Address) void {
         self.systemAddressTableBase = sat;
         self.prcbAddress = pcb;
@@ -1210,13 +1272,24 @@ const Core = struct {
         // interrupt context
         //
         // set the frame pointer to the start of the interrupt stack
-        setRegisterValue(FramePointer, theStackPointer);
+        self.setRegisterValue(FramePointer, theStackPointer);
         self.pc.priority = 31;
         // The next value is considered to be a reserved state in the i960 MC
         // manual but in the Sx/Kx manuals 0b01/0b1 is considered to be
         // interrupted...good job intel... high quality documentation
         self.pc.state = 1; // interrupted
-
+        self.currentLocalFrame = 0;
+        for (&self.locals) |*frame| {
+            frame.relinquishOwnership(self);
+            frame.clear();
+        }
+        // the current local register window needs to be owned on startup
+        self.getCurrentLocalFrame().takeOwnership(theStackPointer, self);
+        self.setRegisterValue(SP, theStackPointer + 64);
+        self.setRegisterValue(PFP, theStackPointer);
+        // todo: clear pending interrupts/
+        // clear any latched external interrupt/IAC signals
+        // begin execution
     }
     fn newCycle(self: *Core) void {
         self.advanceBy = 4;
@@ -1983,6 +2056,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const carryBit: Ordinal = if ((core.ac.@"condition code" & 0b010) != 0) 1 else 0;
             const partialCombination = @addWithOverflow(src2, src1);
             const finalOutput = @addWithOverflow(partialCombination[0], carryBit);
+            const resultantCarry: u1 = partialCombination[1] | finalOutput[1];
             const src2TopBit = src2 & 0x8000_0000;
             const src1TopBit = src1 & 0x8000_0000;
             const destTopBit = finalOutput[0] & 0x8000_0000;
@@ -1991,7 +2065,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             // compute if an integer overflow would have taken place
             cc |= if ((src2TopBit == src1TopBit) and (src2TopBit != destTopBit)) 0b001 else 0b000;
             // translate the overflow bit to the carry out position
-            cc |= if (finalOutput[1] != 0) 0b010 else 0b000;
+            cc |= if (resultantCarry != 0) 0b010 else 0b000;
             core.ac.@"condition code" = cc;
         },
         DecodedOpcode.atadd => {
@@ -2184,6 +2258,7 @@ pub fn main() !void {
     for (message) |x| {
         core.storeToMemory(@TypeOf(x), SerialIOAddress, x);
     }
+    try core.start();
     while (core.continueExecuting) {
         core.newCycle();
         const result = decode(core.loadFromMemory(Ordinal, core.ip));
@@ -2515,4 +2590,24 @@ test "add/subtract index test" {
     try expect_eq(ind, 0b11);
     ind = ind +% 1;
     try expect_eq(ind, 0b00);
+}
+test "core startup test" {
+    const allocator = std.heap.page_allocator;
+    const buffer = try allocator.create(MemoryPool);
+    defer allocator.destroy(buffer);
+    var core = Core{
+        .memory = buffer,
+    };
+    // make a fake PRCB
+    core.storeToMemory(Ordinal, 0x0, 0x0000_0600);
+    core.storeToMemory(Ordinal, 0x4, 0x0000_06c0);
+    core.storeToMemory(Ordinal, 0x8, 0);
+    core.storeToMemory(Ordinal, 0xc, 0x0000_0020);
+    core.storeToMemory(Ordinal, 0x10, 0xFFFF_F320);
+    core.storeToMemory(Ordinal, 0x14, 0);
+    core.storeToMemory(Ordinal, 0x18, 0);
+    core.storeToMemory(Ordinal, 0x1c, 0xFFFF_FFFF);
+    core.start() catch |x| {
+        try expect_eq(x, BootResult.ChecksumFail);
+    };
 }
