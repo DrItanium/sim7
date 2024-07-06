@@ -1286,6 +1286,39 @@ const Core = struct {
     fn moveRegisterValue(self: *Core, dest: Operand, src: Operand) void {
         self.setRegisterValue(dest, self.getRegisterValue(src));
     }
+    fn storeToIOMemory(
+        self: *Core,
+        comptime T: type,
+        addr: Address,
+        value: T,
+    ) void {
+        const target: u24 = @truncate(addr);
+        switch (target) {
+            0x10_0000...0xFF_FFFF => store(T, self.memory, addr, value),
+            0x00_0008 => {
+                // putc
+                var storage: [1]u8 = undefined;
+                storage[0] = @truncate(value);
+                switch (T) {
+                    // read from standard input
+                    ByteOrdinal,
+                    ByteInteger,
+                    ShortOrdinal,
+                    ShortInteger,
+                    Ordinal,
+                    Integer,
+                    LongOrdinal,
+                    LongInteger,
+                    TripleOrdinal,
+                    QuadOrdinal,
+                    => _ = stdout.write(&storage) catch {},
+                    else => @compileError("Unsupported load types provided"),
+                }
+            },
+            0x00_000C => stdout.sync() catch {},
+            else => {},
+        }
+    }
     fn loadFromIOMemory(
         self: *Core,
         comptime T: type,
@@ -1297,12 +1330,12 @@ const Core = struct {
         return switch (target) {
             0x10_0000...0xFF_FFFF => load(T, self.memory, addr),
             0x00_0000 => switch (T) {
-                Ordinal, Integer => clockRate,
-                else => 0,
+                Ordinal, Integer => return clockRate,
+                else => return 0,
             },
             0x00_0004 => switch (T) {
-                Ordinal, Integer => fullRate,
-                else => 0,
+                Ordinal, Integer => return fullRate,
+                else => return 0,
             },
             0x00_0008 => {
                 // getc
@@ -1348,14 +1381,14 @@ const Core = struct {
                             else => unreachable,
                         };
                         if (info.signedness == std.builtin.Signedness.signed) {
-                            if (info.bits > 64) {
+                            if (info.bits >= 64) {
                                 return tval;
                             } else {
                                 return @truncate(tval);
                             }
                         } else {
                             const val: u64 = @bitCast(tval);
-                            if (info.bits > 64) {
+                            if (info.bits >= 64) {
                                 return val;
                             } else {
                                 return @truncate(val);
@@ -1386,7 +1419,7 @@ const Core = struct {
     ) void {
         switch (addr) {
             // io space detection
-            0xFE00_0000...0xFEFF_FFFF => {},
+            0xFE00_0000...0xFEFF_FFFF => self.storeToIOMemory(T, addr, value),
             else => store(T, self.memory, addr, value),
         }
     }
