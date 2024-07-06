@@ -1010,15 +1010,6 @@ const RIP: Operand = 2;
 const LinkRegister: Operand = 30; // g14
 const FramePointer: Operand = 31;
 const FP = FramePointer;
-const PreviousFramePointer = packed struct {
-    rt: u3 = 0,
-    p: u1 = 0,
-    unused: u2 = 0, // used by the Hx processors but not Kx/Sx/Mx processors
-    address: u26 = 0,
-};
-test "check PreviousFramePointer" {
-    try expect_eq(@sizeOf(PreviousFramePointer), @sizeOf(Ordinal));
-}
 const GenericSegmentDescriptor = packed struct {
     reserved: u64 = 0,
     @"base address": Ordinal = 0,
@@ -1189,6 +1180,22 @@ const TraceControls = packed struct {
         @as(*Ordinal, @ptrCast(self)).* = value;
     }
 };
+
+const PreviousFramePointer = packed struct {
+    rt: u3 = 0,
+    p: u1 = 0,
+    unused: u2 = 0, // used by the Hx processors but not Kx/Sx/Mx processors
+    address: u26 = 0,
+    pub fn toWholeValue(self: *PreviousFramePointer) Ordinal {
+        return @as(*Ordinal, @ptrCast(self)).*;
+    }
+    pub fn setWholeValue(self: *PreviousFramePointer, value: Ordinal) void {
+        @as(*Ordinal, @ptrCast(self)).* = value;
+    }
+};
+test "check PreviousFramePointer" {
+    try expect_eq(@sizeOf(PreviousFramePointer), @sizeOf(Ordinal));
+}
 
 // there really isn't a point in keeping the instruction processing within the
 // Core structure
@@ -1699,17 +1706,32 @@ const Core = struct {
             else => return error.Unimplemented,
         }
     }
-    fn balx(self: *Core, targ: i32, dest: Operand) void {
+    fn balx(self: *Core, targ: Ordinal, dest: Operand) void {
 
         // compute the effective address first since the link register
         // could be included in the computation
         self.setRegisterValue(dest, self.ip + self.advanceBy);
-        self.relativeBranch(i32, targ);
+        self.ip = targ;
+        self.advanceBy = 0;
+    }
+    fn computeBitpos(position: u5) Ordinal {
+        return @as(Ordinal, 1) << position;
+    }
+    fn setupNewFrameInternals(self: *Core, fp: Ordinal, temp: Ordinal) void {
+        self.setRegisterValue(PFP, fp);
+        self.setRegisterValue(FP, temp);
+        self.setRegisterValue(SP, temp + 64);
+    }
+    const SALIGN: Ordinal = 4; // this can be changed
+    const C: Ordinal = (SALIGN * 16) - 1;
+    const NotC = ~C;
+    fn computeNextFrame(base: Ordinal) Ordinal {
+        return (base + C) & NotC;
+    }
+    fn computeNextFrameBase(self: *Core) Ordinal {
+        return Core.computeNextFrame(self.getRegisterValue(SP));
     }
 };
-fn computeBitpos(position: u5) Ordinal {
-    return @as(Ordinal, 1) << position;
-}
 fn processInstruction(core: *Core, instruction: Instruction) !void {
     switch (try instruction.getOpcode()) {
         DecodedOpcode.b => core.relativeBranch(i24, instruction.ctrl.getDisplacement()),
@@ -1726,9 +1748,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             // at this point, all local register references are to the new
             // frame
             // now update everything to be correct
-            core.moveRegisterValue(PFP, FP);
-            core.setRegisterValue(FP, temp);
-            core.setRegisterValue(SP, temp + 64);
+            core.setupNewFrameInternals(fp, temp);
             // now we need to do the branching operation itself
             switch (op) {
                 DecodedOpcode.call => core.relativeBranch(i24, instruction.ctrl.getDisplacement()),
@@ -1741,9 +1761,9 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             core.relativeBranch(i24, instruction.ctrl.getDisplacement());
         },
         DecodedOpcode.balx => {
-            const targ: i32 = @bitCast(try core.computeEffectiveAddress(instruction));
+            const targ = try core.computeEffectiveAddress(instruction);
             const dest = instruction.getSrcDest() catch unreachable;
-            try core.balx(targ, targ, dest);
+            core.balx(targ, dest);
         },
         DecodedOpcode.calls => {
             const src1Index = instruction.getSrc1() catch unreachable;
@@ -1753,14 +1773,29 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             }
             try core.syncf();
             const tempPE = core.loadFromMemory(Ordinal, core.getSystemProcedureTableBase() + 48 + (4 * targ));
-            //const typ : u2 = @truncate(tempPE & 0b11);
+            const typ: u2 = @truncate(tempPE & 0b11);
             const procedureAddress = tempPE & 0xFFFFFFFC;
             core.balx(procedureAddress, RIP);
-            //var tmp : Ordinal = 0;
-            //const fp = core.getRegisterValue(FP);
+            var tmp: Ordinal = 0;
+            const fp = core.getRegisterValue(FP);
+            var copy: PreviousFramePointer = PreviousFramePointer{};
+            copy.setWholeValue(fp);
+            if ((typ == 0b00) or (core.inSupervisorMode())) {
+                tmp = core.computeNextFrameBase();
+                copy.rt = 0;
+            } else {
+                tmp = core.getSupervisorStackPointer();
 
-            // @todo finish this implementation
-            return error.Unimplemented;
+                const secondary: u3 = if (core.pc.@"trace enable" != 0) 0b001 else 0b000;
+                copy.rt = 0b010 | secondary;
+                core.pc.@"execution mode" = 1;
+                core.pc.@"trace enable" = @truncate(tmp & 0b1);
+                tmp &= 0xFFFF_FFFC; // clear the lowest two bits after being done here.
+                // if trace is active then that could cause problems overall
+                // with the address offset
+            }
+            core.enterCall(fp);
+            core.setupNewFrameInternals(copy.toWholeValue(), tmp);
         },
         DecodedOpcode.bno => {
             if (core.ac.@"condition code" == 0b000) {
@@ -1811,7 +1846,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const displacement = instruction.cobr.getDisplacement();
             const src1Index = instruction.getSrc1() catch unreachable;
             const src2Index = instruction.getSrc2() catch unreachable;
-            const bitpos: Ordinal = computeBitpos(@truncate((if (instruction.cobr.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
+            const bitpos: Ordinal = Core.computeBitpos(@truncate((if (instruction.cobr.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
             const src = core.getRegisterValue(src2Index);
             if ((src & bitpos) == 0) {
                 core.ac.@"condition code" = 0b010;
@@ -1827,7 +1862,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const displacement = instruction.cobr.getDisplacement();
             const src1Index = instruction.getSrc1() catch unreachable;
             const src2Index = instruction.getSrc2() catch unreachable;
-            const bitpos: Ordinal = computeBitpos(@truncate((if (instruction.cobr.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
+            const bitpos: Ordinal = Core.computeBitpos(@truncate((if (instruction.cobr.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
             const src = core.getRegisterValue(src2Index);
             if ((src & bitpos) != 0) {
                 core.ac.@"condition code" = 0b010;
@@ -1879,7 +1914,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const src1Index = instruction.getSrc1() catch unreachable;
             const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const bitpos: Ordinal = computeBitpos(@truncate((if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
+            const bitpos: Ordinal = Core.computeBitpos(@truncate((if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
             const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
             core.setRegisterValue(srcDestIndex, src | bitpos);
         },
@@ -1887,7 +1922,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const src1Index = instruction.getSrc1() catch unreachable;
             const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const bitpos: Ordinal = computeBitpos(@truncate((if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
+            const bitpos: Ordinal = Core.computeBitpos(@truncate((if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
             const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
             core.setRegisterValue(srcDestIndex, src & (~bitpos));
         },
@@ -1895,14 +1930,14 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const src1Index = instruction.getSrc1() catch unreachable;
             const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const bitpos: Ordinal = computeBitpos(@truncate((if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
+            const bitpos: Ordinal = Core.computeBitpos(@truncate((if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
             const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
             core.setRegisterValue(srcDestIndex, src ^ bitpos);
         },
         DecodedOpcode.chkbit => {
             const src1Index = instruction.getSrc1() catch unreachable;
             const src2Index = instruction.getSrc2() catch unreachable;
-            const bitpos: Ordinal = computeBitpos(@truncate((if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
+            const bitpos: Ordinal = Core.computeBitpos(@truncate((if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
             const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
             core.ac.@"condition code" = if ((src & bitpos) == 0) 0b000 else 0b010;
         },
@@ -2005,7 +2040,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const src1Index = instruction.getSrc1() catch unreachable;
             const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const bitpos: Ordinal = computeBitpos(@truncate((if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
+            const bitpos: Ordinal = Core.computeBitpos(@truncate((if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
             const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
             core.setRegisterValue(srcDestIndex, alterbit(src, bitpos, (core.ac.@"condition code" & 0b010) == 0));
         },
