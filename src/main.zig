@@ -1057,20 +1057,71 @@ const FaultTable = packed struct {
         return @as(*u2048, @ptrCast(self)).*;
     }
 };
+const FaultKind = packed struct {
+    subtype: u8 = 0,
+    unused2: u8 = 0,
+    type: u8 = 0,
+    flags: u8 = 0,
+
+    const Parallel = FaultKind{};
+    const InstructionTrace = FaultKind{ .subtype = 0b10, .type = 0x1 };
+    const BranchTrace = FaultKind{ .subtype = 0b100, .type = 0x1 };
+    const CallTrace = FaultKind{ .subtype = 0b1000, .type = 0x1 };
+    const ReturnTrace = FaultKind{ .subtype = 0b10000, .type = 0x1 };
+    const PrereturnTrace = FaultKind{ .subtype = 0b100000, .type = 0x1 };
+    const SupervisorTrace = FaultKind{ .subtype = 0b1000000, .type = 0x1 };
+    const MarkTrace = FaultKind{ .subtype = 0b10000000, .type = 0x1 };
+
+    const InvalidOpcode = FaultKind{ .type = 2, .subtype = 1 };
+    const Unimplemented = FaultKind{ .type = 2, .subtype = 2 };
+    const Unaligned = FaultKind{ .type = 2, .subtype = 3 };
+    const InvalidOperand = FaultKind{ .type = 2, .subtype = 4 };
+    const IntegerOverflow = FaultKind{ .type = 3, .subtype = 1 };
+    const ZeroDivide = FaultKind{ .type = 3, .subtype = 2 };
+
+    const FloatingPointOverflow = FaultKind{ .type = 0x4, .subtype = 0b1 };
+    const FloatingPointUndeflow = FaultKind{ .type = 0x4, .subtype = 0b10 };
+    const FloatingPointInvalidOperation = FaultKind{ .type = 0x4, .subtype = 0b100 };
+    const FloatingPointZeroDivideOperation = FaultKind{ .type = 0x4, .subtype = 0b1000 };
+    const FloatingPointInexact = FaultKind{ .type = 0x4, .subtype = 0b10000 };
+    const FloatingPointReservedEncoding = FaultKind{ .type = 0x4, .subtype = 0b100000 };
+
+    const ConstraintRange = FaultKind{ .type = 5, .subtype = 1 };
+    const InvalidSS = FaultKind{ .type = 5, .subtype = 2 };
+    const InvalidSegmentTableEntry = FaultKind{ .type = 6, .subtype = 1 };
+    const InvalidPageTableDirectoryEntry = FaultKind{ .type = 6, .subtype = 2 };
+    const InvalidPageTableEntry = FaultKind{ .type = 6, .subtype = 3 };
+
+    const SegmentLength = FaultKind{ .type = 7, .subtype = 2 };
+    const PageRights = FaultKind{ .type = 7, .subtype = 4 };
+    const BadAccess = FaultKind{ .type = 7, .subtype = 0x20 };
+    const MachineBadAccess = FaultKind{ .type = 8, .subtype = 1 };
+    const MachineParityError = FaultKind{ .type = 8, .subtype = 2 };
+
+    const Control = FaultKind{ .type = 9, .subtype = 1 };
+    const Dispatch = FaultKind{ .type = 9, .subtype = 2 };
+    const IAC = FaultKind{ .type = 9, .subtype = 3 };
+
+    const TypeMismatch = FaultKind{ .type = 0xa, .subtype = 1 };
+    const Contents = FaultKind{ .type = 0xa, .subtype = 2 };
+    const TypeContents = Contents;
+    const TimeSlice = FaultKind{ .type = 0xc, .subtype = 1 };
+    const InvalidDescriptor = FaultKind{ .type = 0xd, .subtype = 1 };
+    const EventNotice = FaultKind{ .type = 0xe, .subtype = 1 };
+    const Override = FaultKind{ .type = 0x10 };
+
+    pub fn wholeValue(self: *const FaultKind) Ordinal {
+        return @as(*Ordinal, @ptrCast(self)).*;
+    }
+};
 const FaultRecord = packed struct {
     unused: u32 = 0,
     @"override fault data": u96 = 0,
     @"fault data": u96 = 0,
-    @"override subtype": u8 = 0,
-    unused1: u8 = 0,
-    @"override type": u8 = 0,
-    @"override flags": u8 = 0,
+    @"override type": FaultKind = {},
     @"process controls": u32,
     @"arithmetic controls": u32,
-    @"fault subtype": u8 = 0,
-    unused2: u8 = 0,
-    @"fault type": u8 = 0,
-    @"fault flags": u8 = 0,
+    @"fault type": FaultKind = {},
     @"address of faulting instruction": u32,
 };
 const ProcessorControls = packed struct {
@@ -1217,65 +1268,6 @@ const IOSpaceMemoryUnderlayEnd = 0xFEFF_FFFF;
 const IOSpaceStart = 0xFE00_0000;
 const IOSpaceEnd = 0xFEFF_FFFF;
 
-const FaultKind = enum(u32) {
-    Parallel = 0,
-    InstructionTrace = FaultKind.GenerateTraceFault(0b0000_0010),
-    BranchTrace = FaultKind.GenerateTraceFault(0b0000_0100),
-    CallTrace = FaultKind.GenerateTraceFault(0b0000_1000),
-    ReturnTrace = FaultKind.GenerateTraceFault(0b0001_0000),
-    PrereturnTrace = FaultKind.GenerateTraceFault(0b0010_0000),
-    SupervisorTrace = FaultKind.GenerateTraceFault(0b0100_0000),
-    MarkTrace = FaultKind.GenerateTraceFault(0b1000_0000),
-    InvalidOpcode = FaultKind.GenerateFault(2, 1),
-    Unimplemented = FaultKind.GenerateFault(2, 2),
-    Unaligned = FaultKind.GenerateFault(2, 3),
-    InvalidOperand = FaultKind.GenerateFault(2, 4),
-    IntegerOverflow = FaultKind.GenerateFault(3, 1),
-    ZeroDivide = FaultKind.GenerateFault(3, 2),
-
-    FloatingPointOverflow = FaultKind.GenerateFloatingPointFault(0b00000001),
-    FloatingPointUnderflow = FaultKind.GenerateFloatingPointFault(0b00000010),
-    FloatingPointInvalidOperation = FaultKind.GenerateFloatingPointFault(0b00000100),
-    FloatingPointZeroDivide = FaultKind.GenerateFloatingPointFault(0b00001000),
-    FloatingPointInexactFault = FaultKind.GenerateFloatingPointFault(0b00010000),
-    FloatingPointReservedEncoding = FaultKind.GenerateFloatingPointFault(0b00100000),
-
-    ConstraintRange = FaultKind.GenerateFault(5, 1),
-    InvalidSS = FaultKind.GenerateFault(5, 2),
-    InvalidSegmentTableEntry = FaultKind.GenerateFault(6, 1),
-    InvalidPageTableDirectoryEntry = FaultKind.GenerateFault(6, 2),
-    InvalidPageTableEntry = FaultKind.GenerateFault(6, 3),
-    SegmentLength = FaultKind.GenerateFault(7, 2),
-    PageRights = FaultKind.GenerateFault(7, 4),
-    BadAccess = FaultKind.GenerateFault(7, 0x20),
-    @"Machine Bad Access" = FaultKind.GenerateFault(8, 1),
-    @"Machine Parity Error" = FaultKind.GenerateFault(8, 2),
-    Control = FaultKind.GenerateFault(9, 1),
-    Dispatch = FaultKind.GenerateFault(9, 2),
-    IAC = FaultKind.GenerateFault(9, 3),
-
-    TypeMismatch = FaultKind.GenerateFault(0xa, 1),
-    Contents = FaultKind.GenerateFault(0xa, 2),
-    TypeContents = FaultKind.Contents,
-    TimeSlice = FaultKind.GenerateFault(0xc, 0x1),
-    InvalidDescriptor = FaultKind.GenerateFault(0xd, 0x1),
-    EventNotice = FaultKind.GenerateFault(0xe, 0x1),
-    Override = FaultKind.GenerateFault(0x10, 0),
-
-    fn GenerateFault(major: u16, minor: u16) u32 {
-        var upper: u32 = major;
-        const lower: u32 = minor;
-        upper = upper << 16;
-        return lower | upper;
-    }
-
-    fn GenerateTraceFault(subtype: u8) u32 {
-        return FaultKind.GenerateFault(0x1, subtype);
-    }
-    fn GenerateFloatingPointFault(subtype: u16) u32 {
-        return FaultKind.GenerateFault(0x4, subtype);
-    }
-};
 const Core = struct {
     memory: *MemoryPool = undefined,
     globals: RegisterFrame = RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
