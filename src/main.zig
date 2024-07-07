@@ -794,7 +794,7 @@ const CTRLInstruction = packed struct {
         return @as(i24, @bitCast(bits));
     }
     pub fn getOpcode(self: *const CTRLInstruction) Faults!DecodedOpcode {
-        return meta.intToEnum(DecodedOpcode, self.opcode) catch Faults.IllegalOpcode;
+        return meta.intToEnum(DecodedOpcode, self.opcode) catch Faults.InvalidOpcode;
     }
 };
 
@@ -813,7 +813,7 @@ const COBRInstruction = packed struct {
         return self.m1;
     }
     pub fn getOpcode(self: *const COBRInstruction) Faults!DecodedOpcode {
-        return meta.intToEnum(DecodedOpcode, self.opcode) catch Faults.IllegalOpcode;
+        return meta.intToEnum(DecodedOpcode, self.opcode) catch Faults.InvalidOpcode;
     }
 };
 
@@ -842,7 +842,7 @@ const REGInstruction = packed struct {
         major <<= 4;
         const minor: u12 = self.opcodeExt;
         //return @enumFromInt(major | minor);
-        return meta.intToEnum(DecodedOpcode, major | minor) catch error.IllegalOpcode;
+        return meta.intToEnum(DecodedOpcode, major | minor) catch Faults.InvalidOpcode;
     }
 };
 const MEMAAddressComputationKind = enum(u1) {
@@ -1081,7 +1081,7 @@ const FaultKind = packed struct {
     const ZeroDivide = FaultKind{ .type = 3, .subtype = 2 };
 
     const FloatingPointOverflow = FaultKind{ .type = 0x4, .subtype = 0b1 };
-    const FloatingPointUndeflow = FaultKind{ .type = 0x4, .subtype = 0b10 };
+    const FloatingPointUnderflow = FaultKind{ .type = 0x4, .subtype = 0b10 };
     const FloatingPointInvalidOperation = FaultKind{ .type = 0x4, .subtype = 0b100 };
     const FloatingPointZeroDivideOperation = FaultKind{ .type = 0x4, .subtype = 0b1000 };
     const FloatingPointInexact = FaultKind{ .type = 0x4, .subtype = 0b10000 };
@@ -1125,13 +1125,55 @@ const FaultKind = packed struct {
             Faults.PrereturnTrace => FaultKind.PrereturnTrace,
             Faults.SupervisorTrace => FaultKind.SupervisorTrace,
             Faults.MarkTrace => FaultKind.MarkTrace,
+
+            Faults.InvalidOpcode,
+            Faults.IllegalOpcode,
+            => FaultKind.InvalidOpcode,
+            Faults.Unimplemented,
+            => FaultKind.Unimplemented,
+
+            Faults.Unaligned => FaultKind.Unaligned,
+
+            Faults.InvalidOperand,
+            Faults.IllegalOperand,
+            => FaultKind.InvalidOperand,
+
+            Faults.IntegerOverflow,
+            Faults.Overflow,
+            => FaultKind.IntegerOverflow,
+
+            Faults.DivisionByZero,
+            Faults.ZeroDivide,
+            => FaultKind.ZeroDivide,
+
+            Faults.FloatingPointOverflow => FaultKind.FloatingPointOverflow,
+            Faults.FloatingPointUnderflow => FaultKind.FloatingPointUnderflow,
+            Faults.FloatingPointInvalidOperation => FaultKind.FloatingPointInvalidOperation,
+            Faults.FloatingPointZeroDivideOperation => FaultKind.FloatingPointZeroDivideOperation,
+            Faults.FloatingPointInexact => FaultKind.FloatingPointInexact,
+            Faults.FloatingPointReservedEncoding => FaultKind.FloatingPointReservedEncoding,
+
             Faults.ConstraintRange => FaultKind.ConstraintRange,
             Faults.InvalidSS => FaultKind.InvalidSS,
-            Faults.Unimplemented, Faults.IllegalOpcode => FaultKind.Unimplemented,
-            Faults.IllegalOperand, Faults.InvalidOperand => FaultKind.InvalidOperand,
-            Faults.IntegerOverflow, Faults.Overflow => FaultKind.IntegerOverflow,
+            Faults.InvalidSegmentTableEntry => FaultKind.InvalidSegmentTableEntry,
+            Faults.InvalidPageTableDirectoryEntry => FaultKind.InvalidPageTableDirectoryEntry,
+            Faults.InvalidPageTableEntry => FaultKind.InvalidPageTableEntry,
+
+            Faults.SegmentLength => FaultKind.SegmentLength,
+            Faults.PageRights => FaultKind.PageRights,
+            Faults.BadAccess => FaultKind.BadAccess,
+            Faults.MachineBadAccess => FaultKind.MachineBadAccess,
+            Faults.MachineParityError => FaultKind.MachineParityError,
+
+            Faults.Control => FaultKind.Control,
+            Faults.Dispatch => FaultKind.Dispatch,
+            Faults.IAC => FaultKind.IAC,
+            Faults.TypeMismatch => FaultKind.TypeMismatch,
+            Faults.TypeContents => FaultKind.TypeContents,
+            Faults.TimeSlice => FaultKind.TimeSlice,
+            Faults.InvalidDescriptor => FaultKind.InvalidDescriptor,
+            Faults.EventNotice => FaultKind.EventNotice,
             Faults.Override => FaultKind.Override,
-            else => FaultKind.Override,
         };
     }
 };
@@ -1169,6 +1211,7 @@ const Faults = error{
     BadAccess,
     MachineBadAccess,
     MachineParityError,
+
     Control,
     Dispatch,
     IAC,
@@ -1179,7 +1222,6 @@ const Faults = error{
     EventNotice,
     Override,
     IllegalOpcode,
-    NotMemInstruction,
     Overflow,
     IllegalOperand,
 };
@@ -1847,7 +1889,7 @@ const Core = struct {
                     },
                 };
             },
-            else => Faults.NotMemInstruction,
+            else => Faults.InvalidOperand,
         };
     }
     fn syncf(self: *Core) !void {
@@ -2749,11 +2791,11 @@ test "simple reg test" {
         .opcode = 0x58,
     };
     try expect(@intFromEnum(x.getOpcode() catch |err| {
-        try expect(err == Faults.IllegalOpcode);
+        try expect(err == Faults.InvalidOpcode);
         return;
     }) == 0x582);
     try expect(x.getOpcode() catch |err| {
-        try expect(err == Faults.IllegalOpcode);
+        try expect(err == Faults.InvalidOpcode);
         return;
     } == DecodedOpcode.andnot);
     try expect(x.srcDest == 7);
@@ -2767,11 +2809,11 @@ test "simple ctrl test" {
         .opcode = 0x8,
     };
     try expect(@intFromEnum(x.getOpcode() catch |err| {
-        try expect(err == Faults.IllegalOpcode);
+        try expect(err == Faults.InvalidOpcode);
         return;
     }) == 0x08);
     try expect(x.getOpcode() catch |err| {
-        try expect(err == Faults.IllegalOpcode);
+        try expect(err == Faults.InvalidOpcode);
         return;
     } == DecodedOpcode.b);
     try expect(x.getDisplacement() == 0xFDEC);
@@ -2786,11 +2828,11 @@ test "simple ctrl test2" {
     x.displacement = 0xFDEC;
     x.opcode = 0x08;
     try expect(@intFromEnum(x.getOpcode() catch |err| {
-        try expect(err == Faults.IllegalOpcode);
+        try expect(err == Faults.InvalidOpcode);
         return;
     }) == 0x08);
     try expect(x.getOpcode() catch |err| {
-        try expect(err == Faults.IllegalOpcode);
+        try expect(err == Faults.InvalidOpcode);
         return;
     } == DecodedOpcode.b);
     try expect(x.getDisplacement() == 0xFDEC);
