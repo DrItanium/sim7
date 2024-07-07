@@ -219,6 +219,7 @@ fn load(
                 return a | (b << 32) | (c << 64) | (d << 96);
             }
         },
+        FaultTableEntry => FaultTableEntry.make(load(LongOrdinal, pool, address)),
         else => @compileError("Requested type not allowed!"),
     };
 }
@@ -1062,7 +1063,7 @@ const FaultKind = packed struct {
     unused2: u8 = 0,
     type: u8 = 0,
     flags: u8 = 0,
-
+    const None = FaultKind{};
     const Parallel = FaultKind{};
     const InstructionTrace = FaultKind{ .subtype = 0b10, .type = 0x1 };
     const BranchTrace = FaultKind{ .subtype = 0b100, .type = 0x1 };
@@ -1114,15 +1115,16 @@ const FaultKind = packed struct {
         return @as(*Ordinal, @ptrCast(self)).*;
     }
 };
-const FaultRecord = packed struct {
+const FaultRecord = struct {
     unused: u32 = 0,
     @"override fault data": u96 = 0,
     @"fault data": u96 = 0,
-    @"override type": FaultKind = {},
+    @"override type": FaultKind = FaultKind.None,
     @"process controls": u32,
     @"arithmetic controls": u32,
-    @"fault type": FaultKind = {},
+    @"fault type": FaultKind,
     @"address of faulting instruction": u32,
+    @"save return address": bool,
 };
 const ProcessorControls = packed struct {
     unused0: u1 = 0,
@@ -1173,7 +1175,7 @@ const ArithmeticControls = packed struct {
     @"floating-point rounding control": u2 = 0,
 
     pub fn toWholeValue(self: *const ArithmeticControls) Ordinal {
-        return @as(*Ordinal, @ptrCast(self)).*;
+        return @as(*const Ordinal, @ptrCast(self)).*;
     }
     pub fn setWholeValue(self: *ArithmeticControls, value: Ordinal) void {
         @as(*Ordinal, @ptrCast(self)).* = value;
@@ -1195,7 +1197,7 @@ const ProcessControls = packed struct {
     priority: u5 = 0,
     @"internal state": u11 = 0,
     pub fn toWholeValue(self: *const ProcessControls) Ordinal {
-        return @as(*Ordinal, @ptrCast(self)).*;
+        return @as(*const Ordinal, @ptrCast(self)).*;
     }
     pub fn setWholeValue(self: *ProcessControls, value: Ordinal) void {
         @as(*Ordinal, @ptrCast(self)).* = value;
@@ -1251,6 +1253,7 @@ const SegmentSelector = packed struct {
     _: u6 = 0b111_111,
     index: u26 = 0,
 
+    const None = SegmentSelector{};
     pub fn toWholeValue(self: *const SegmentSelector) Ordinal {
         return @as(*const Ordinal, @ptrCast(self)).*;
     }
@@ -1274,7 +1277,8 @@ test "SegmentSelector tests" {
 }
 const FaultTableEntry = packed struct {
     handlerFunctionAddress: Ordinal = 0,
-    selector: SegmentSelector = 0,
+    selector: SegmentSelector = SegmentSelector{},
+    const None = FaultTableEntry{};
     pub fn isSystemTableEntry(self: *const Core) bool {
         return ((self.handlerFunctionAddress & 0b11) == 0b10);
     }
@@ -1340,7 +1344,23 @@ const Core = struct {
         const faultTableBaseAddress = self.getFaultTableBaseAddress();
         const maskedIndex: Address = index & 0b0001_1111;
         const realOffset = maskedIndex * (@sizeOf(FaultTableEntry));
-        return FaultTableEntry.make(self.load(LongOrdinal, faultTableBaseAddress + realOffset));
+        return self.loadFromMemory(FaultTableEntry, faultTableBaseAddress + realOffset);
+    }
+    fn generateFault(self: *Core, record: *const FaultRecord) void {
+        if (record.@"save return address") {
+            self.saveReturnAddress(RIP);
+        }
+        const faultType = record.@"fault type".type;
+        _ = self.getFaultEntry(faultType);
+    }
+    fn constructFaultRecord(self: *Core, faultCode: FaultKind, saveReturn: bool) FaultRecord {
+        return FaultRecord{
+            .@"process controls" = self.pc.toWholeValue(),
+            .@"arithmetic controls" = self.ac.toWholeValue(),
+            .@"fault type" = faultCode,
+            .@"address of faulting instruction" = self.ip,
+            .@"save return address" = saveReturn,
+        };
     }
     fn getSystemProcedureTableBase(self: *Core) Ordinal {
         return self.loadFromMemory(Ordinal, self.systemAddressTableBase + 120);
@@ -1588,10 +1608,12 @@ const Core = struct {
             IOSpaceMemoryUnderlayStart...IOSpaceMemoryUnderlayEnd => load(T, self.memory, addr),
             CPUClockRateAddress => switch (T) {
                 Ordinal, Integer => CPUClockRate,
+                FaultTableEntry => FaultTableEntry.None,
                 else => 0,
             },
             SystemClockRateAddress => switch (T) {
                 Ordinal, Integer => SystemClockRate,
+                FaultTableEntry => FaultTableEntry.None,
                 else => 0,
             },
             SerialIOAddress => switch (T) {
@@ -1608,29 +1630,36 @@ const Core = struct {
                 Integer,
                 LongInteger,
                 => stdin.readByteSigned() catch @as(T, math.minInt(T)),
+                FaultTableEntry => FaultTableEntry.None,
                 else => @compileError("Unsupported load types provided"),
             },
             MicrosecondsTimestampAddress, MillisecondsTimestampAddress => scope: {
                 // strange packed alignment work happens here so you can get a
                 // 64-bit value out based on the base alignment
-                switch (@typeInfo(T)) {
-                    .Int => |info| {
-                        const tval = switch (comptime addr) {
-                            MillisecondsTimestampAddress => std.time.milliTimestamp(),
-                            MicrosecondsTimestampAddress => std.time.microTimestamp(),
-                            else => unreachable,
-                        };
-                        if (info.signedness == std.builtin.Signedness.signed) {
-                            break :scope if (info.bits >= 64) tval else @truncate(tval);
-                        } else {
-                            const val: u64 = @bitCast(tval);
-                            break :scope if (info.bits >= 64) val else @truncate(val);
-                        }
+                switch (T) {
+                    FaultTableEntry => break :scope FaultTableEntry.None,
+                    else => switch (@typeInfo(T)) {
+                        .Int => |info| {
+                            const tval = switch (comptime addr) {
+                                MillisecondsTimestampAddress => std.time.milliTimestamp(),
+                                MicrosecondsTimestampAddress => std.time.microTimestamp(),
+                                else => unreachable,
+                            };
+                            if (info.signedness == std.builtin.Signedness.signed) {
+                                break :scope if (info.bits >= 64) tval else @truncate(tval);
+                            } else {
+                                const val: u64 = @bitCast(tval);
+                                break :scope if (info.bits >= 64) val else @truncate(val);
+                            }
+                        },
+                        else => @compileError("unsupported load type provided"),
                     },
-                    else => @compileError("unsupported load type provided"),
                 }
             },
-            else => 0,
+            else => switch (T) {
+                FaultTableEntry => FaultTableEntry.None,
+                else => 0,
+            },
         };
     }
     fn loadFromMemory(
@@ -1830,14 +1859,6 @@ const Core = struct {
     }
     fn computeNextFrameBase(self: *Core) Ordinal {
         return Core.computeNextFrame(self.getRegisterValue(SP));
-    }
-    fn generateFault(self: *Core, record: *const FaultRecord, saveRet: bool) void {
-        if (saveRet) {
-            self.saveReturnAddress(RIP);
-        }
-        _ = record;
-        //const faultType = record.type;
-
     }
 };
 fn processInstruction(core: *Core, instruction: Instruction) !void {
@@ -2554,9 +2575,13 @@ pub fn main() !void {
     while (core.continueExecuting) {
         core.newCycle();
         const result = decode(core.loadFromMemory(Ordinal, core.ip));
-        processInstruction(&core, result) catch |x|
-            switch (x) {
-            else => return x,
+        processInstruction(&core, result) catch |x| {
+            const record: FaultRecord = switch (x) {
+                error.Unimplemented => core.constructFaultRecord(FaultKind.Unimplemented, false),
+                error.DivisionByZero => core.constructFaultRecord(FaultKind.ZeroDivide, true),
+                else => return x,
+            };
+            core.generateFault(&record);
         };
 
         core.nextInstruction();
@@ -2601,10 +2626,6 @@ test "Opcodes Sanity Checks 2" {
         return;
     };
     try expect(value == DecodedOpcode.cmpibo);
-}
-
-test "FaultRecord sanity check" {
-    try expect(@sizeOf(FaultRecord) == 48);
 }
 
 test "sizeof sanity check" {
