@@ -1216,6 +1216,21 @@ const IOSpaceMemoryUnderlayStart = 0xFE10_0000;
 const IOSpaceMemoryUnderlayEnd = 0xFEFF_FFFF;
 const IOSpaceStart = 0xFE00_0000;
 const IOSpaceEnd = 0xFEFF_FFFF;
+
+const FaultKind = enum(u32) {
+    NoFault = 0xFFFF_FFFF,
+    ParallelFault = 0,
+    InstructionTraceFault = FaultKind.GenerateTraceFault(0b0000_0010),
+    BranchTraceFault = FaultKind.GenerateTraceFault(0b0000_0100),
+    CallTraceFault = FaultKind.GenerateTraceFault(0b0000_1000),
+    ReturnTraceFault = FaultKind.GenerateTraceFault(0b0001_0000),
+    PrereturnTraceFault = FaultKind.GenerateTraceFault(0b0010_0000),
+    SupervisorTraceFault = FaultKind.GenerateTraceFault(0b0100_0000),
+    MarkTraceFault = FaultKind.GenerateTraceFault(0b1000_0000),
+    fn GenerateTraceFault(subtype: u8) u32 {
+        return 0x0001_0000 | subtype;
+    }
+};
 const Core = struct {
     memory: *MemoryPool = undefined,
     globals: RegisterFrame = RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -1225,12 +1240,6 @@ const Core = struct {
         LocalRegisterFrame{},
         LocalRegisterFrame{},
     },
-    //locals: [4]RegisterFrame = [_]RegisterFrame{
-    //    RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-    //    RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-    //    RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-    //    RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-    //},
     // @todo link the size of this field to the number of local register frames
     currentLocalFrame: u2 = 0,
     fpr: [4]ExtendedReal = [_]ExtendedReal{ 0.0, 0.0, 0.0, 0.0 },
