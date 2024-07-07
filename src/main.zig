@@ -1218,17 +1218,62 @@ const IOSpaceStart = 0xFE00_0000;
 const IOSpaceEnd = 0xFEFF_FFFF;
 
 const FaultKind = enum(u32) {
-    NoFault = 0xFFFF_FFFF,
-    ParallelFault = 0,
-    InstructionTraceFault = FaultKind.GenerateTraceFault(0b0000_0010),
-    BranchTraceFault = FaultKind.GenerateTraceFault(0b0000_0100),
-    CallTraceFault = FaultKind.GenerateTraceFault(0b0000_1000),
-    ReturnTraceFault = FaultKind.GenerateTraceFault(0b0001_0000),
-    PrereturnTraceFault = FaultKind.GenerateTraceFault(0b0010_0000),
-    SupervisorTraceFault = FaultKind.GenerateTraceFault(0b0100_0000),
-    MarkTraceFault = FaultKind.GenerateTraceFault(0b1000_0000),
+    Parallel = 0,
+    InstructionTrace = FaultKind.GenerateTraceFault(0b0000_0010),
+    BranchTrace = FaultKind.GenerateTraceFault(0b0000_0100),
+    CallTrace = FaultKind.GenerateTraceFault(0b0000_1000),
+    ReturnTrace = FaultKind.GenerateTraceFault(0b0001_0000),
+    PrereturnTrace = FaultKind.GenerateTraceFault(0b0010_0000),
+    SupervisorTrace = FaultKind.GenerateTraceFault(0b0100_0000),
+    MarkTrace = FaultKind.GenerateTraceFault(0b1000_0000),
+    InvalidOpcode = FaultKind.GenerateFault(2, 1),
+    Unimplemented = FaultKind.GenerateFault(2, 2),
+    Unaligned = FaultKind.GenerateFault(2, 3),
+    InvalidOperand = FaultKind.GenerateFault(2, 4),
+    IntegerOverflow = FaultKind.GenerateFault(3, 1),
+    ZeroDivide = FaultKind.GenerateFault(3, 2),
+
+    FloatingPointOverflow = FaultKind.GenerateFloatingPointFault(0b00000001),
+    FloatingPointUnderflow = FaultKind.GenerateFloatingPointFault(0b00000010),
+    FloatingPointInvalidOperation = FaultKind.GenerateFloatingPointFault(0b00000100),
+    FloatingPointZeroDivide = FaultKind.GenerateFloatingPointFault(0b00001000),
+    FloatingPointInexactFault = FaultKind.GenerateFloatingPointFault(0b00010000),
+    FloatingPointReservedEncoding = FaultKind.GenerateFloatingPointFault(0b00100000),
+
+    ConstraintRange = FaultKind.GenerateFault(5, 1),
+    InvalidSS = FaultKind.GenerateFault(5, 2),
+    InvalidSegmentTableEntry = FaultKind.GenerateFault(6, 1),
+    InvalidPageTableDirectoryEntry = FaultKind.GenerateFault(6, 2),
+    InvalidPageTableEntry = FaultKind.GenerateFault(6, 3),
+    SegmentLength = FaultKind.GenerateFault(7, 2),
+    PageRights = FaultKind.GenerateFault(7, 4),
+    BadAccess = FaultKind.GenerateFault(7, 0x20),
+    @"Machine Bad Access" = FaultKind.GenerateFault(8, 1),
+    @"Machine Parity Error" = FaultKind.GenerateFault(8, 2),
+    Control = FaultKind.GenerateFault(9, 1),
+    Dispatch = FaultKind.GenerateFault(9, 2),
+    IAC = FaultKind.GenerateFault(9, 3),
+
+    TypeMismatch = FaultKind.GenerateFault(0xa, 1),
+    Contents = FaultKind.GenerateFault(0xa, 2),
+    TypeContents = FaultKind.Contents,
+    TimeSlice = FaultKind.GenerateFault(0xc, 0x1),
+    InvalidDescriptor = FaultKind.GenerateFault(0xd, 0x1),
+    EventNotice = FaultKind.GenerateFault(0xe, 0x1),
+    Override = FaultKind.GenerateFault(0x10, 0),
+
+    fn GenerateFault(major: u16, minor: u16) u32 {
+        var upper: u32 = major;
+        const lower: u32 = minor;
+        upper = upper << 16;
+        return lower | upper;
+    }
+
     fn GenerateTraceFault(subtype: u8) u32 {
-        return 0x0001_0000 | subtype;
+        return FaultKind.GenerateFault(0x1, subtype);
+    }
+    fn GenerateFloatingPointFault(subtype: u16) u32 {
+        return FaultKind.GenerateFault(0x4, subtype);
     }
 };
 const Core = struct {
