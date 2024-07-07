@@ -1186,9 +1186,30 @@ const Faults = error{
 fn shouldSaveReturnAddress(self: Faults) bool {
     return switch (self) {
         Faults.EventNotice,
+        Faults.IntegerOverflow,
+        Faults.Overflow,
+        Faults.ZeroDivide,
+        Faults.DivisionByZero,
+        Faults.FloatingPointInvalidOperation,
+        Faults.FloatingPointOverflow,
+        Faults.FloatingPointZeroDivideOperation,
+        Faults.FloatingPointInexact,
+        Faults.FloatingPointReservedEncoding,
         => true,
         else => false,
     };
+}
+test "test faults saving return addresses" {
+    try expect(shouldSaveReturnAddress(Faults.EventNotice));
+    try expect(shouldSaveReturnAddress(Faults.IntegerOverflow));
+    try expect(shouldSaveReturnAddress(Faults.Overflow));
+    try expect(shouldSaveReturnAddress(Faults.ZeroDivide));
+    try expect(shouldSaveReturnAddress(Faults.DivisionByZero));
+    try expect(shouldSaveReturnAddress(Faults.FloatingPointInvalidOperation));
+    try expect(shouldSaveReturnAddress(Faults.FloatingPointOverflow));
+    try expect(shouldSaveReturnAddress(Faults.FloatingPointZeroDivideOperation));
+    try expect(shouldSaveReturnAddress(Faults.FloatingPointInexact));
+    try expect(shouldSaveReturnAddress(Faults.FloatingPointReservedEncoding));
 }
 const FaultRecord = struct {
     unused: u32 = 0,
