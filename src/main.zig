@@ -793,8 +793,8 @@ const CTRLInstruction = packed struct {
         const bits = @as(u24, @bitCast(self.displacement)) & 0xFFFFFC;
         return @as(i24, @bitCast(bits));
     }
-    pub fn getOpcode(self: *const CTRLInstruction) !DecodedOpcode {
-        return meta.intToEnum(DecodedOpcode, self.opcode) catch error.IllegalOpcode;
+    pub fn getOpcode(self: *const CTRLInstruction) Faults!DecodedOpcode {
+        return meta.intToEnum(DecodedOpcode, self.opcode) catch Faults.IllegalOpcode;
     }
 };
 
@@ -812,8 +812,8 @@ const COBRInstruction = packed struct {
     pub fn treatSrc1AsLiteral(self: *const COBRInstruction) bool {
         return self.m1;
     }
-    pub fn getOpcode(self: *const COBRInstruction) !DecodedOpcode {
-        return meta.intToEnum(DecodedOpcode, self.opcode) catch error.IllegalOpcode;
+    pub fn getOpcode(self: *const COBRInstruction) Faults!DecodedOpcode {
+        return meta.intToEnum(DecodedOpcode, self.opcode) catch Faults.IllegalOpcode;
     }
 };
 
@@ -914,8 +914,8 @@ const MEMBInstruction = packed struct {
     pub fn usesOptionalDisplacement(self: *const MEMBInstruction) bool {
         return self.mode.usesOptionalDisplacement();
     }
-    pub fn getComputationMode(self: *const MEMBInstruction) !MEMBAddressComputationKind {
-        return meta.intToEnum(MEMBAddressComputationKind, self.mode) catch error.IllegalOperand;
+    pub fn getComputationMode(self: *const MEMBInstruction) Faults!MEMBAddressComputationKind {
+        return meta.intToEnum(MEMBAddressComputationKind, self.mode) catch Faults.IllegalOperand;
     }
 };
 
@@ -923,7 +923,7 @@ test "Bad MEMB Instruction" {
     const tmp = MEMBInstruction{
         .mode = 0b0110,
     };
-    try expect(tmp.getComputationMode() == error.IllegalOperand);
+    try expect(tmp.getComputationMode() == Faults.IllegalOperand);
 }
 
 const InstructionDeterminant = packed struct {
@@ -1114,7 +1114,82 @@ const FaultKind = packed struct {
     pub fn wholeValue(self: *const FaultKind) Ordinal {
         return @as(*Ordinal, @ptrCast(self)).*;
     }
+
+    pub fn translate(kind: Faults) FaultKind {
+        return switch (kind) {
+            Faults.Parallel => FaultKind.Parallel,
+            Faults.InstructionTrace => FaultKind.InstructionTrace,
+            Faults.BranchTrace => FaultKind.BranchTrace,
+            Faults.CallTrace => FaultKind.CallTrace,
+            Faults.ReturnTrace => FaultKind.ReturnTrace,
+            Faults.PrereturnTrace => FaultKind.PrereturnTrace,
+            Faults.SupervisorTrace => FaultKind.SupervisorTrace,
+            Faults.MarkTrace => FaultKind.MarkTrace,
+            Faults.ConstraintRange => FaultKind.ConstraintRange,
+            Faults.InvalidSS => FaultKind.InvalidSS,
+            Faults.Unimplemented, Faults.IllegalOpcode => FaultKind.Unimplemented,
+            Faults.IllegalOperand, Faults.InvalidOperand => FaultKind.InvalidOperand,
+            Faults.IntegerOverflow, Faults.Overflow => FaultKind.IntegerOverflow,
+            Faults.Override => FaultKind.Override,
+            else => FaultKind.Override,
+        };
+    }
 };
+
+const Faults = error{
+    Parallel,
+    InstructionTrace,
+    BranchTrace,
+    CallTrace,
+    ReturnTrace,
+    PrereturnTrace,
+    SupervisorTrace,
+    MarkTrace,
+    InvalidOpcode,
+    Unimplemented,
+    Unaligned,
+    InvalidOperand,
+    IntegerOverflow,
+    DivisionByZero,
+    ZeroDivide,
+    FloatingPointOverflow,
+    FloatingPointUnderflow,
+    FloatingPointInvalidOperation,
+    FloatingPointZeroDivideOperation,
+    FloatingPointInexact,
+    FloatingPointReservedEncoding,
+
+    ConstraintRange,
+    InvalidSS,
+    InvalidSegmentTableEntry,
+    InvalidPageTableDirectoryEntry,
+    InvalidPageTableEntry,
+    SegmentLength,
+    PageRights,
+    BadAccess,
+    MachineBadAccess,
+    MachineParityError,
+    Control,
+    Dispatch,
+    IAC,
+    TypeMismatch,
+    TypeContents,
+    TimeSlice,
+    InvalidDescriptor,
+    EventNotice,
+    Override,
+    IllegalOpcode,
+    NotMemInstruction,
+    Overflow,
+    IllegalOperand,
+};
+fn shouldSaveReturnAddress(self: Faults) bool {
+    return switch (self) {
+        Faults.EventNotice,
+        => true,
+        else => false,
+    };
+}
 const FaultRecord = struct {
     unused: u32 = 0,
     @"override fault data": u96 = 0,
@@ -1493,7 +1568,7 @@ const Core = struct {
     fn getFloatingPointRegister(self: *Core, index: Operand) !*ExtendedReal {
         return switch (index) {
             0b00000...0b00011 => |val| &self.fpr[val],
-            else => error.IllegalOperand,
+            else => Faults.IllegalOperand,
         };
     }
     fn setRegisterValue(self: *Core, index: Operand, value: Ordinal) void {
@@ -1502,18 +1577,18 @@ const Core = struct {
     fn getRegisterValue(self: *Core, index: Operand) Ordinal {
         return self.getRegister(index).*;
     }
-    fn getTripleRegisterValue(self: *Core, index: Operand) !TripleOrdinal {
+    fn getTripleRegisterValue(self: *Core, index: Operand) Faults!TripleOrdinal {
         if ((index & 0b11) != 0) {
-            return error.InvalidOpcodeFault;
+            return error.InvalidOpcode;
         }
         const a: TripleOrdinal = self.getRegisterValue(index);
         const b: TripleOrdinal = self.getRegisterValue(index + 1);
         const c: TripleOrdinal = self.getRegisterValue(index + 2);
         return a | math.shl(TripleOrdinal, b, 32) | math.shl(TripleOrdinal, c, 64);
     }
-    fn getQuadRegisterValue(self: *Core, index: Operand) !QuadOrdinal {
+    fn getQuadRegisterValue(self: *Core, index: Operand) Faults!QuadOrdinal {
         if ((index & 0b11) != 0) {
-            return error.InvalidOpcodeFault;
+            return error.InvalidOpcode;
         }
         const a: QuadOrdinal = self.getRegisterValue(index);
         const b: QuadOrdinal = self.getRegisterValue(index + 1);
@@ -1521,32 +1596,32 @@ const Core = struct {
         const d: QuadOrdinal = self.getRegisterValue(index + 3);
         return a | math.shl(QuadOrdinal, b, 32) | math.shl(QuadOrdinal, c, 64) | math.shl(QuadOrdinal, d, 96);
     }
-    fn getLongRegisterValue(self: *Core, index: Operand) !LongOrdinal {
+    fn getLongRegisterValue(self: *Core, index: Operand) Faults!LongOrdinal {
         if ((index & 0b1) != 0) {
-            return error.InvalidOpcodeFault;
+            return error.InvalidOpcode;
         }
         const lower: LongOrdinal = self.getRegisterValue(index);
         const upper: LongOrdinal = self.getRegisterValue(index + 1);
         return lower | math.shl(LongOrdinal, upper, 32);
     }
-    fn setLongRegisterValue(self: *Core, index: Operand, value: LongOrdinal) !void {
+    fn setLongRegisterValue(self: *Core, index: Operand, value: LongOrdinal) Faults!void {
         if ((index & 0b1) != 0) {
-            return error.InvalidOpcodeFault;
+            return Faults.InvalidOpcode;
         }
         self.setRegisterValue(index, @truncate(value));
         self.setRegisterValue(index + 1, @truncate(math.shr(LongOrdinal, value, 32)));
     }
-    fn setTripleRegisterValue(self: *Core, index: Operand, value: TripleOrdinal) !void {
+    fn setTripleRegisterValue(self: *Core, index: Operand, value: TripleOrdinal) Faults!void {
         if ((index & 0b11) != 0) {
-            return error.InvalidOpcodeFault;
+            return Faults.InvalidOpcode;
         }
         self.setRegisterValue(index, @truncate(value));
         self.setRegisterValue(index + 1, @truncate(math.shr(TripleOrdinal, value, 32)));
         self.setRegisterValue(index + 2, @truncate(math.shr(TripleOrdinal, value, 64)));
     }
-    fn setQuadRegisterValue(self: *Core, index: Operand, value: QuadOrdinal) !void {
+    fn setQuadRegisterValue(self: *Core, index: Operand, value: QuadOrdinal) Faults!void {
         if ((index & 0b11) != 0) {
-            return error.InvalidOpcodeFault;
+            return Faults.InvalidOpcode;
         }
         self.setRegisterValue(index, @truncate(value));
         self.setRegisterValue(index + 1, @truncate(math.shr(QuadOrdinal, value, 32)));
@@ -1702,7 +1777,7 @@ const Core = struct {
     fn computeEffectiveAddress(
         self: *Core,
         instruction: Instruction,
-    ) !Address {
+    ) Faults!Address {
         return switch (instruction) {
             .mema => |inst| {
                 return switch (inst.getComputationMode()) {
@@ -1751,7 +1826,7 @@ const Core = struct {
                     },
                 };
             },
-            else => error.NotMemInstruction,
+            else => Faults.NotMemInstruction,
         };
     }
     fn syncf(self: *Core) !void {
@@ -1861,7 +1936,7 @@ const Core = struct {
         return Core.computeNextFrame(self.getRegisterValue(SP));
     }
 };
-fn processInstruction(core: *Core, instruction: Instruction) !void {
+fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
     switch (try instruction.getOpcode()) {
         DecodedOpcode.b => core.relativeBranch(i24, instruction.ctrl.getDisplacement()),
         DecodedOpcode.bx => core.relativeBranch(i32, @bitCast(try core.computeEffectiveAddress(instruction))),
@@ -1898,7 +1973,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
             const src1Index = instruction.getSrc1() catch unreachable;
             const targ: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
             if (targ > 259) {
-                return error.ProtectionLengthFault;
+                return Faults.SegmentLength;
             }
             try core.syncf();
             const tempPE = core.loadFromMemory(Ordinal, core.getSystemProcedureTableBase() + 48 + (4 * targ));
@@ -1946,7 +2021,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
 
         DecodedOpcode.faultno => {
             if (core.ac.@"condition code" == 0) {
-                return error.ConstraintRangeFault;
+                return Faults.ConstraintRange;
             }
         },
         DecodedOpcode.faultg,
@@ -1958,7 +2033,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
         DecodedOpcode.faulto,
         => |opcode| {
             if ((opcode.getConditionCode() & core.ac.@"condition code") != 0) {
-                return error.ConstraintRangeFault;
+                return Faults.ConstraintRange;
             }
         },
         DecodedOpcode.testno => core.setRegisterValue(instruction.getSrc1() catch unreachable, if (core.ac.@"condition code" == 0b000) 1 else 0),
@@ -2012,7 +2087,7 @@ fn processInstruction(core: *Core, instruction: Instruction) !void {
         DecodedOpcode.ediv => {
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
             if ((srcDestIndex & 0b1) != 0) {
-                return error.InvalidOpcodeFault;
+                return Faults.InvalidOpcode;
             }
             const src1Index = instruction.getSrc1() catch unreachable;
             const src2Index = instruction.getSrc2() catch unreachable;
@@ -2576,11 +2651,7 @@ pub fn main() !void {
         core.newCycle();
         const result = decode(core.loadFromMemory(Ordinal, core.ip));
         processInstruction(&core, result) catch |x| {
-            const record: FaultRecord = switch (x) {
-                error.Unimplemented => core.constructFaultRecord(FaultKind.Unimplemented, false),
-                error.DivisionByZero => core.constructFaultRecord(FaultKind.ZeroDivide, true),
-                else => return x,
-            };
+            const record: FaultRecord = core.constructFaultRecord(FaultKind.translate(x), shouldSaveReturnAddress(x));
             core.generateFault(&record);
         };
 
@@ -2657,11 +2728,11 @@ test "simple reg test" {
         .opcode = 0x58,
     };
     try expect(@intFromEnum(x.getOpcode() catch |err| {
-        try expect(err == error.IllegalOpcode);
+        try expect(err == Faults.IllegalOpcode);
         return;
     }) == 0x582);
     try expect(x.getOpcode() catch |err| {
-        try expect(err == error.IllegalOpcode);
+        try expect(err == Faults.IllegalOpcode);
         return;
     } == DecodedOpcode.andnot);
     try expect(x.srcDest == 7);
@@ -2675,11 +2746,11 @@ test "simple ctrl test" {
         .opcode = 0x8,
     };
     try expect(@intFromEnum(x.getOpcode() catch |err| {
-        try expect(err == error.IllegalOpcode);
+        try expect(err == Faults.IllegalOpcode);
         return;
     }) == 0x08);
     try expect(x.getOpcode() catch |err| {
-        try expect(err == error.IllegalOpcode);
+        try expect(err == Faults.IllegalOpcode);
         return;
     } == DecodedOpcode.b);
     try expect(x.getDisplacement() == 0xFDEC);
@@ -2694,11 +2765,11 @@ test "simple ctrl test2" {
     x.displacement = 0xFDEC;
     x.opcode = 0x08;
     try expect(@intFromEnum(x.getOpcode() catch |err| {
-        try expect(err == error.IllegalOpcode);
+        try expect(err == Faults.IllegalOpcode);
         return;
     }) == 0x08);
     try expect(x.getOpcode() catch |err| {
-        try expect(err == error.IllegalOpcode);
+        try expect(err == Faults.IllegalOpcode);
         return;
     } == DecodedOpcode.b);
     try expect(x.getDisplacement() == 0xFDEC);
