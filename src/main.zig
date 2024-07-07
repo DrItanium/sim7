@@ -1284,6 +1284,12 @@ const FaultTableEntry = packed struct {
     pub fn getFaultHandlerProcedureNumber(self: *const Core) Address {
         return ((self.handlerFunctionAddress & 0xFFFF_FFFC));
     }
+    pub fn make(value: LongOrdinal) FaultTableEntry {
+        return FaultTableEntry{
+            .handlerFunctionAddress = @truncate(value),
+            .selector = SegmentSelector.make(@truncate(value >> 32)),
+        };
+    }
 };
 
 test "FaultTableEntry tests" {
@@ -1330,6 +1336,12 @@ const Core = struct {
     continueExecuting: bool = true,
     systemAddressTableBase: Ordinal = 0,
     prcbAddress: Ordinal = 0,
+    fn getFaultEntry(self: *Core, index: u8) FaultTableEntry {
+        const faultTableBaseAddress = self.getFaultTableBaseAddress();
+        const maskedIndex: Address = index & 0b0001_1111;
+        const realOffset = maskedIndex * (@sizeOf(FaultTableEntry));
+        return FaultTableEntry.make(self.load(LongOrdinal, faultTableBaseAddress + realOffset));
+    }
     fn getSystemProcedureTableBase(self: *Core) Ordinal {
         return self.loadFromMemory(Ordinal, self.systemAddressTableBase + 120);
     }
