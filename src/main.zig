@@ -1510,7 +1510,7 @@ const Core = struct {
         if (entry.isLocalProcedureEntry()) {
             self.localProcedureEntry_FaultCall(record, entry.handlerFunctionAddress);
         } else if (entry.isSystemTableEntry()) {
-            // donuts
+            self.procedureTableEntry_FaultCall(record, &entry);
         } else {
             return error.BadFault;
         }
@@ -1547,6 +1547,11 @@ const Core = struct {
     }
     fn localProcedureEntry_FaultCall(self: *Core, record: *const FaultRecord, address: Address) void {
         self.faultCallGeneric(record, address, self.getStackPointer());
+    }
+    fn procedureTableEntry_FaultCall(self: *Core, record: *const FaultRecord, entry: *const FaultTableEntry) void {
+        _ = self;
+        _ = record;
+        _ = entry;
     }
     fn constructFaultRecord(self: *Core, err: Faults) FaultRecord {
         return FaultRecord{
