@@ -220,6 +220,11 @@ fn load(
             }
         },
         FaultTableEntry => FaultTableEntry.make(load(LongOrdinal, pool, address)),
+        GenericSegmentDescriptor => {
+            var descriptor = GenericSegmentDescriptor{};
+            descriptor.setWholeValue(load(QuadOrdinal, pool, address));
+            return descriptor;
+        },
         else => @compileError("Requested type not allowed!"),
     };
 }
@@ -1565,9 +1570,12 @@ const Core = struct {
         self.faultCallGeneric(record, address, self.getStackPointer());
     }
     fn procedureTableEntry_FaultCall(self: *Core, record: *const FaultRecord, entry: *const FaultTableEntry) void {
-        _ = self;
         _ = record;
-        _ = entry;
+
+        const index: Ordinal = entry.selector.index;
+        var baseIndex = self.systemAddressTableBase;
+        baseIndex += (index * @sizeOf(GenericSegmentDescriptor));
+        _ = self.loadFromMemory(GenericSegmentDescriptor, baseIndex);
     }
     fn constructFaultRecord(self: *Core, err: Faults) FaultRecord {
         return FaultRecord{
@@ -1826,11 +1834,13 @@ const Core = struct {
             CPUClockRateAddress => switch (T) {
                 Ordinal, Integer => CPUClockRate,
                 FaultTableEntry => FaultTableEntry.None,
+                GenericSegmentDescriptor => GenericSegmentDescriptor{},
                 else => 0,
             },
             SystemClockRateAddress => switch (T) {
                 Ordinal, Integer => SystemClockRate,
                 FaultTableEntry => FaultTableEntry.None,
+                GenericSegmentDescriptor => GenericSegmentDescriptor{},
                 else => 0,
             },
             SerialIOAddress => switch (T) {
@@ -1848,6 +1858,7 @@ const Core = struct {
                 LongInteger,
                 => stdin.readByteSigned() catch @as(T, math.minInt(T)),
                 FaultTableEntry => FaultTableEntry.None,
+                GenericSegmentDescriptor => GenericSegmentDescriptor{},
                 else => @compileError("Unsupported load types provided"),
             },
             MicrosecondsTimestampAddress, MillisecondsTimestampAddress => scope: {
@@ -1855,6 +1866,7 @@ const Core = struct {
                 // 64-bit value out based on the base alignment
                 switch (T) {
                     FaultTableEntry => break :scope FaultTableEntry.None,
+                    GenericSegmentDescriptor => break :scope GenericSegmentDescriptor{},
                     else => switch (@typeInfo(T)) {
                         .Int => |info| {
                             const tval = switch (comptime addr) {
@@ -1875,6 +1887,7 @@ const Core = struct {
             },
             else => switch (T) {
                 FaultTableEntry => FaultTableEntry.None,
+                GenericSegmentDescriptor => GenericSegmentDescriptor{},
                 else => 0,
             },
         };
