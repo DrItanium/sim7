@@ -1029,11 +1029,19 @@ const GenericSegmentDescriptor = packed struct {
     pub fn wholeValue(self: *const GenericSegmentDescriptor) QuadOrdinal {
         return @as(*const QuadOrdinal, @ptrCast(self)).*;
     }
+
+    pub fn setWholeValue(self: *GenericSegmentDescriptor, value: QuadOrdinal) void {
+        @as(*QuadOrdinal, @ptrCast(self)).* = value;
+    }
 };
 test "segment descriptor" {
     try expect_eq(@sizeOf(GenericSegmentDescriptor), @sizeOf(QuadOrdinal));
     const v0 = GenericSegmentDescriptor{};
     try expect_eq(v0.wholeValue(), 0);
+    var v1 = GenericSegmentDescriptor{};
+    try expect_eq(v1.wholeValue(), 0);
+    v1.setWholeValue(0xFDED);
+    try expect_eq(v1.wholeValue(), 0xFDED);
 }
 const FaultProcedureEntry = packed struct {
     @"procedure address": u32 = 0,
