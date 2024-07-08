@@ -1531,7 +1531,7 @@ const Core = struct {
         if (entry.isLocalProcedureEntry()) {
             self.localProcedureEntry_FaultCall(record, entry.handlerFunctionAddress);
         } else if (entry.isSystemTableEntry()) {
-            self.procedureTableEntry_FaultCall(record, &entry);
+            try self.procedureTableEntry_FaultCall(record, &entry);
         } else {
             return error.BadFault;
         }
@@ -1569,13 +1569,40 @@ const Core = struct {
     fn localProcedureEntry_FaultCall(self: *Core, record: *const FaultRecord, address: Address) void {
         self.faultCallGeneric(record, address, self.getStackPointer());
     }
-    fn procedureTableEntry_FaultCall(self: *Core, record: *const FaultRecord, entry: *const FaultTableEntry) void {
+    fn supervisorProcedureTableEntry_FaultCall(
+        self: *Core,
+        record: *const FaultRecord,
+        procedureAddress: Address,
+        baseTableAddress: Address,
+    ) void {
+        _ = self;
         _ = record;
+        _ = procedureAddress;
+        _ = baseTableAddress;
+    }
+    fn procedureTableEntry_FaultCall(self: *Core, record: *const FaultRecord, entry: *const FaultTableEntry) !void {
 
-        const index: Ordinal = entry.selector.index;
+        // first get the segment descriptor
+        const idx: Ordinal = entry.selector.index;
         var baseIndex = self.systemAddressTableBase;
-        baseIndex += (index * @sizeOf(GenericSegmentDescriptor));
-        _ = self.loadFromMemory(GenericSegmentDescriptor, baseIndex);
+        baseIndex += (idx * @sizeOf(GenericSegmentDescriptor));
+        const descriptor = self.loadFromMemory(GenericSegmentDescriptor, baseIndex);
+        // next find the procedure number
+        const index = entry.getFaultHandlerProcedureNumber();
+        // @todo implement override fault if the segment descriptor is invalid
+        // or wrong for this target
+
+        // now we can get the base offset table
+        const tableAddress = descriptor.@"base address";
+
+        // get the starting offset to the procedure-table structure entries
+        const procedureEntry = self.loadFromMemory(Ordinal, tableAddress + 48 + index);
+        const procedureAddress = procedureEntry & 0xFFFF_FFFC;
+        switch (procedureEntry & 0b11) {
+            0b00 => self.localProcedureEntry_FaultCall(record, procedureAddress),
+            0b10 => self.supervisorProcedureTableEntry_FaultCall(record, procedureAddress, tableAddress),
+            else => return error.IllegalProcedureEntry,
+        }
     }
     fn constructFaultRecord(self: *Core, err: Faults) FaultRecord {
         return FaultRecord{
