@@ -1285,7 +1285,12 @@ const FaultRecord = struct {
     @"fault type": FaultKind,
     @"address of faulting instruction": u32,
     @"save return address": bool,
-
+    pub fn clearTraceEnableBit(self: *const FaultRecord) bool {
+        return switch (self.@"fault type".type) {
+            0, 1 => true, // override or parallel, trace
+            else => false,
+        };
+    }
     pub fn storeToMemory(self: *const FaultRecord, pool: *MemoryPool, address: Address) void {
         store(Ordinal, pool, address, self.unused);
         store(TripleOrdinal, pool, address + 4, self.@"override fault data");
@@ -1575,10 +1580,22 @@ const Core = struct {
         procedureAddress: Address,
         baseTableAddress: Address,
     ) void {
-        _ = self;
-        _ = record;
-        _ = procedureAddress;
-        _ = baseTableAddress;
+        var baseStackAddress: Ordinal = undefined;
+        if (self.pc.inSupervisorMode()) {
+            baseStackAddress = self.getStackPointer();
+        } else {
+            baseStackAddress = self.loadFromMemory(Ordinal, baseTableAddress + 12);
+            self.pc.@"execution mode" = 1;
+        }
+        if (record.clearTraceEnableBit()) {
+            self.pc.@"trace enable" = 0;
+        } else {
+            self.pc.@"trace enable" = @truncate(baseStackAddress & 0b1);
+        }
+        // now that we have the right area to be in, lets do teh FaultCall as
+        // though it is a local one!
+        const temp = baseStackAddress & 0xFFFF_FFFC;
+        self.faultCallGeneric(record, procedureAddress, temp);
     }
     fn procedureTableEntry_FaultCall(self: *Core, record: *const FaultRecord, entry: *const FaultTableEntry) !void {
 
