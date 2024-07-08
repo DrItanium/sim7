@@ -280,6 +280,7 @@ fn store(
                 store(LongOrdinal, pool, address +% 8, @truncate(value >> 64));
             }
         },
+        *FaultRecord, *const FaultRecord, FaultRecord => value.storeToMemory(pool, address),
         else => @compileError("Requested type not supported!"),
     }
 }
@@ -1112,7 +1113,7 @@ const FaultKind = packed struct {
     const Override = FaultKind{ .type = 0x10 };
 
     pub fn wholeValue(self: *const FaultKind) Ordinal {
-        return @as(*Ordinal, @ptrCast(self)).*;
+        return @as(*const Ordinal, @ptrCast(self)).*;
     }
 
     pub fn translate(kind: Faults) FaultKind {
@@ -1263,6 +1264,17 @@ const FaultRecord = struct {
     @"fault type": FaultKind,
     @"address of faulting instruction": u32,
     @"save return address": bool,
+
+    pub fn storeToMemory(self: *const FaultRecord, pool: *MemoryPool, address: Address) void {
+        store(Ordinal, pool, address, self.unused);
+        store(TripleOrdinal, pool, address + 4, self.@"override fault data");
+        store(TripleOrdinal, pool, address + 16, self.@"fault data");
+        store(Ordinal, pool, address + 28, self.@"override type".wholeValue());
+        store(Ordinal, pool, address + 32, self.@"process controls");
+        store(Ordinal, pool, address + 36, self.@"arithmetic controls");
+        store(Ordinal, pool, address + 40, self.@"fault type".wholeValue());
+        store(Ordinal, pool, address + 44, self.@"address of faulting instruction");
+    }
 };
 const ProcessorControls = packed struct {
     unused0: u1 = 0,
@@ -1377,11 +1389,16 @@ const PreviousFramePointer = packed struct {
     p: u1 = 0,
     unused: u2 = 0, // used by the Hx processors but not Kx/Sx/Mx processors
     address: u26 = 0,
-    pub fn toWholeValue(self: *PreviousFramePointer) Ordinal {
-        return @as(*Ordinal, @ptrCast(self)).*;
+    pub fn toWholeValue(self: *const PreviousFramePointer) Ordinal {
+        return @as(*const Ordinal, @ptrCast(self)).*;
     }
     pub fn setWholeValue(self: *PreviousFramePointer, value: Ordinal) void {
         @as(*Ordinal, @ptrCast(self)).* = value;
+    }
+    pub fn make(value: u32) PreviousFramePointer {
+        var result: PreviousFramePointer = PreviousFramePointer{};
+        result.setWholeValue(value);
+        return result;
     }
 };
 test "check PreviousFramePointer" {
@@ -1417,13 +1434,13 @@ const FaultTableEntry = packed struct {
     handlerFunctionAddress: Ordinal = 0,
     selector: SegmentSelector = SegmentSelector{},
     const None = FaultTableEntry{};
-    pub fn isSystemTableEntry(self: *const Core) bool {
+    pub fn isSystemTableEntry(self: *const FaultTableEntry) bool {
         return ((self.handlerFunctionAddress & 0b11) == 0b10);
     }
-    pub fn isLocalProcedureEntry(self: *const Core) bool {
+    pub fn isLocalProcedureEntry(self: *const FaultTableEntry) bool {
         return ((self.handlerFunctionAddress & 0b11) == 0);
     }
-    pub fn getFaultHandlerProcedureNumber(self: *const Core) Address {
+    pub fn getFaultHandlerProcedureNumber(self: *const FaultTableEntry) Address {
         return ((self.handlerFunctionAddress & 0xFFFF_FFFC));
     }
     pub fn make(value: LongOrdinal) FaultTableEntry {
@@ -1484,20 +1501,59 @@ const Core = struct {
         const realOffset = maskedIndex * (@sizeOf(FaultTableEntry));
         return self.loadFromMemory(FaultTableEntry, faultTableBaseAddress + realOffset);
     }
-    fn generateFault(self: *Core, record: *const FaultRecord) void {
+    fn generateFault(self: *Core, record: *const FaultRecord) !void {
         if (record.@"save return address") {
             self.saveReturnAddress(RIP);
         }
         const faultType = record.@"fault type".type;
-        _ = self.getFaultEntry(faultType);
+        const entry = self.getFaultEntry(faultType);
+        if (entry.isLocalProcedureEntry()) {
+            self.localProcedureEntry_FaultCall(record, entry.handlerFunctionAddress);
+        } else if (entry.isSystemTableEntry()) {
+            // donuts
+        } else {
+            return error.BadFault;
+        }
     }
-    fn constructFaultRecord(self: *Core, faultCode: FaultKind, saveReturn: bool) FaultRecord {
+    fn getStackPointer(self: *Core) Ordinal {
+        return self.getRegisterValue(SP);
+    }
+    fn faultCallGeneric(self: *Core, record: *const FaultRecord, address: Address, stackPointer: Address) void {
+        // first allocate a new frame on the stack that the processor is
+        // currently using.
+        //
+        // Set the frame-return status field to 0b001
+        //
+        // allocate enough space before the start of the frame for the fault
+        // record (and optionally a resumption record if necessary). Be lazy
+        // and just allocate two frames worth of information be safe! Three
+        // frames worth are necessary to make sure we have enough padding.
+
+        const nextFrame = Core.computeNextFrameFaultBase(stackPointer);
+        const fp = self.getRegisterValue(FP);
+        // save the current registers to the stack
+        self.enterCall(fp);
+        // manually setup the stack frame as needed
+        var pfp = PreviousFramePointer.make(self.getRegisterValue(FP) & 0xFFFFFFF0);
+        pfp.rt = 0b001;
+        self.setRegisterValue(PFP, pfp.toWholeValue());
+        self.setRegisterValue(FP, nextFrame);
+        self.setRegisterValue(SP, nextFrame + 64);
+        self.storeToMemory(@TypeOf(record), nextFrame - 48, record);
+        // no need to push a resumption record right now and set the resume
+        // flag in the saved process controls
+        self.ip = address;
+    }
+    fn localProcedureEntry_FaultCall(self: *Core, record: *const FaultRecord, address: Address) void {
+        self.faultCallGeneric(record, address, self.getStackPointer());
+    }
+    fn constructFaultRecord(self: *Core, err: Faults) FaultRecord {
         return FaultRecord{
             .@"process controls" = self.pc.toWholeValue(),
             .@"arithmetic controls" = self.ac.toWholeValue(),
-            .@"fault type" = faultCode,
+            .@"fault type" = FaultKind.translate(err),
             .@"address of faulting instruction" = self.ip,
-            .@"save return address" = saveReturn,
+            .@"save return address" = shouldSaveReturnAddress(err),
         };
     }
     fn getSystemProcedureTableBase(self: *Core) Ordinal {
@@ -1730,6 +1786,7 @@ const Core = struct {
                     TripleOrdinal,
                     QuadOrdinal,
                     => _ = stdout.writeByte(@truncate(value)) catch {},
+                    FaultRecord, *FaultRecord, *const FaultRecord => {},
                     else => @compileError("Unsupported load types provided"),
                 }
             },
@@ -1992,11 +2049,11 @@ const Core = struct {
     const SALIGN: Ordinal = 4; // this can be changed
     const C: Ordinal = (SALIGN * 16) - 1;
     const NotC = ~C;
-    fn computeNextFrame(base: Ordinal) Ordinal {
-        return (base + C) & NotC;
-    }
     fn computeNextFrameBase(self: *Core) Ordinal {
-        return Core.computeNextFrame(self.getRegisterValue(SP));
+        return (self.getRegisterValue(SP) + C) & NotC;
+    }
+    fn computeNextFrameFaultBase(stackPointer: Ordinal) Ordinal {
+        return (stackPointer + (C * 3)) & NotC;
     }
 };
 fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
@@ -2714,8 +2771,8 @@ pub fn main() !void {
         core.newCycle();
         const result = decode(core.loadFromMemory(Ordinal, core.ip));
         processInstruction(&core, result) catch |x| {
-            const record: FaultRecord = core.constructFaultRecord(FaultKind.translate(x), shouldSaveReturnAddress(x));
-            core.generateFault(&record);
+            const record: FaultRecord = core.constructFaultRecord(x);
+            try core.generateFault(&record);
         };
 
         core.nextInstruction();
