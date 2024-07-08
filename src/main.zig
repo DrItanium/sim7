@@ -2421,14 +2421,20 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
                 else => unreachable,
             });
         },
-        DecodedOpcode.muli => {
+        DecodedOpcode.addi,
+        DecodedOpcode.muli,
+        => |operation| {
             const src1Index = instruction.getSrc1() catch unreachable;
             const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
             const src1: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index));
             const src2: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src1Index else core.getRegisterValue(src2Index));
             // support detecting integer overflow here
-            core.setRegisterValue(srcDestIndex, @bitCast(try math.mul(Integer, src2, src1)));
+            core.setRegisterValue(srcDestIndex, @bitCast(switch (comptime operation) {
+                DecodedOpcode.addi => try math.add(Integer, src2, src1),
+                DecodedOpcode.muli => try math.mul(Integer, src2, src1),
+                else => unreachable,
+            }));
         },
         DecodedOpcode.modify => {
             const src1Index = instruction.getSrc1() catch unreachable;
@@ -2468,15 +2474,6 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
             const srcValue: QuadOrdinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else try core.getQuadRegisterValue(src1Index);
             try core.setQuadRegisterValue(srcDestIndex, srcValue);
-        },
-        DecodedOpcode.addi => {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
-            const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const src1: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index));
-            const src2: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src1Index else core.getRegisterValue(src2Index));
-            // support detecting integer overflow here
-            core.setRegisterValue(srcDestIndex, @bitCast(try math.add(Integer, src2, src1)));
         },
         DecodedOpcode.divo => {
             const src1Index = instruction.getSrc1() catch unreachable;
@@ -2819,7 +2816,7 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
         },
         DecodedOpcode.ret => try core.ret(),
 
-        else => return error.Unimplemented,
+        else => return Faults.Unimplemented,
     }
 }
 fn modify(mask: Ordinal, src: Ordinal, srcDest: Ordinal) Ordinal {
