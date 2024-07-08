@@ -1543,6 +1543,7 @@ const Core = struct {
         // no need to push a resumption record right now and set the resume
         // flag in the saved process controls
         self.ip = address;
+        self.advanceBy = 0;
     }
     fn localProcedureEntry_FaultCall(self: *Core, record: *const FaultRecord, address: Address) void {
         self.faultCallGeneric(record, address, self.getStackPointer());
