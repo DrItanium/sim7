@@ -3109,68 +3109,6 @@ test "alterbit logic" {
 test "modify logic" {
     try expect_eq(modify(0xFF, 0xFFFF, 0), 0xFF);
 }
-test "overflow test" {
-    const a: i32 = 0x7FFF_FFFF;
-    const b: i32 = 1;
-    try expect((a +% b) < 0);
-    const c: u32 = 0xFFFF_FFFF;
-    const d: u32 = 1;
-    const e = math.add(u32, c, d) catch 33;
-    try expect(e == 33);
-}
-test "allocation test" {
-    const allocator = std.heap.page_allocator;
-    const buffer = try allocator.alloc(u8, 4);
-    defer allocator.free(buffer);
-    try expect(buffer.len == 4);
-    for (buffer, 0..) |*val, ind| {
-        val.* = @truncate(ind);
-    }
-    for (buffer, 0..) |val, ind| {
-        try expect_eq(val, ind);
-    }
-}
-test "allocation test2" {
-    const allocator = std.heap.page_allocator;
-    const buffer = try allocator.alloc(u32, 4);
-    defer allocator.free(buffer);
-    try expect(buffer.len == 4);
-    for (buffer, 0..) |*val, ind| {
-        val.* = @truncate(ind + 0x03020100);
-    }
-    for (buffer, 0..) |val, ind| {
-        try expect_eq(val, (ind + 0x03020100));
-    }
-    // okay, so now we need to see if we can view the various components
-    //
-    // it is trivial to go from larger to smaller!
-    const buffer2: *const [4]u8 = @ptrCast(&buffer[0]);
-    try expect_eq(buffer2[0], 0x00);
-    try expect_eq(buffer2[1], 0x01);
-    try expect_eq(buffer2[2], 0x02);
-    try expect_eq(buffer2[3], 0x03);
-}
-test "add/subtract index test" {
-    // this is a sanity check to make sure that my understanding of zig
-    // overflow semantics is correct
-    var ind: u2 = 0;
-    ind = ind -% 1;
-    try expect_eq(ind, 0b11);
-    ind = ind -% 1;
-    try expect_eq(ind, 0b10);
-    ind = ind -% 1;
-    try expect_eq(ind, 0b01);
-    ind = ind -% 1;
-    try expect_eq(ind, 0b00);
-    ind = ind +% 1;
-    try expect_eq(ind, 0b01);
-    ind = ind +% 1;
-    try expect_eq(ind, 0b10);
-    ind = ind +% 1;
-    try expect_eq(ind, 0b11);
-    ind = ind +% 1;
-    try expect_eq(ind, 0b00);
-}
 test "core startup test" {
     const allocator = std.heap.page_allocator;
     const buffer = try allocator.create(MemoryPool);
