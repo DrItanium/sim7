@@ -37,3 +37,25 @@ pub const Address = u32;
 pub const Real = f32;
 pub const LongReal = f64;
 pub const ExtendedReal = f80;
+
+pub const ArchitectureLevel = enum {
+    Core,
+    Numerics,
+    Protected,
+    Extended,
+};
+
+pub const InstructionClass = enum(u2) {
+    CTRL,
+    COBR,
+    REG,
+    MEM,
+    pub fn determine(opcode: u8) InstructionClass {
+        return switch (comptime opcode) {
+            0x00...0x1F => InstructionClass.CTRL,
+            0x20...0x3F => InstructionClass.COBR,
+            0x40...0x7F => InstructionClass.REG,
+            0x80...0xFF => InstructionClass.MEM,
+        };
+    }
+};
