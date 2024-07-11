@@ -26,6 +26,8 @@ const coreTypes = @import("types.zig");
 const faults = @import("Faults.zig");
 const opcodes = @import("Opcode.zig");
 const main = @import("main.zig");
+const expect = std.testing.expect;
+const expectEqual = std.testing.expectEqual;
 const ByteOrdinal = coreTypes.ByteOrdinal;
 const ByteInteger = coreTypes.ByteInteger;
 const ShortOrdinal = coreTypes.ShortOrdinal;
@@ -220,4 +222,40 @@ pub fn store(
         *FaultRecord, *const FaultRecord, FaultRecord => value.storeToMemory(pool, address),
         else => @compileError("Requested type not supported!"),
     }
+}
+
+test "memory pool load/store test" {
+    const allocator = std.heap.page_allocator;
+    const buffer = try allocator.create(MemoryPool);
+    defer allocator.destroy(buffer);
+    buffer[0] = 0xED;
+    buffer[1] = 0xFD;
+    buffer[2] = 0xFF;
+    buffer[3] = 0xFF;
+    buffer[4] = 0xab;
+    buffer[5] = 0xcd;
+    buffer[6] = 0xef;
+    buffer[7] = 0x01;
+    buffer[8] = 0x23;
+    buffer[9] = 0x45;
+    buffer[10] = 0x67;
+    buffer[11] = 0x89;
+    store(Ordinal, buffer, 12, 0x44332211);
+    store(LongOrdinal, buffer, 16, 0xccbbaa99_88776655);
+    store(ShortOrdinal, buffer, 24, 0xeedd);
+    store(ByteOrdinal, buffer, 26, 0xff);
+    try expectEqual(load(ByteOrdinal, buffer, 16), 0x55);
+    try expectEqual(load(ByteOrdinal, buffer, 0), 0xED);
+    try expectEqual(load(ByteOrdinal, buffer, 1), 0xFD);
+    try expectEqual(load(ByteInteger, buffer, 2), -1);
+    try expectEqual(load(ShortOrdinal, buffer, 0), 0xFDED);
+    try expectEqual(load(ShortInteger, buffer, 2), -1);
+    try expectEqual(load(ShortOrdinal, buffer, 2), 0xFFFF);
+    try expectEqual(load(Ordinal, buffer, 0), 0xFFFFFDED);
+    try expectEqual(load(TripleOrdinal, buffer, 0), 0x89674523_01efcdab_ffffFDED);
+    try expectEqual(load(TripleOrdinal, buffer, 1), 0x1189674523_01efcdab_ffffFD);
+    try expectEqual(load(TripleOrdinal, buffer, 2), 0x221189674523_01efcdab_ffff);
+    try expectEqual(load(QuadOrdinal, buffer, 0), 0x44332211_89674523_01efcdab_ffffFDED);
+    try expectEqual(load(QuadOrdinal, buffer, 1), 0x55443322_11896745_2301efcd_abffffFD);
+    try expectEqual(load(ShortOrdinal, buffer, 24), 0xeedd);
 }

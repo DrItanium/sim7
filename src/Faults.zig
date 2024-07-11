@@ -306,13 +306,13 @@ test "test faults saving return addresses" {
 
 const std = @import("std");
 const coreTypes = @import("types.zig");
-const main = @import("main.zig");
+const nativeInterface = @import("MemoryInterface.zig");
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const Ordinal = coreTypes.Ordinal;
 const TripleOrdinal = coreTypes.TripleOrdinal;
 const Address = coreTypes.Address;
 const MemoryPool = coreTypes.MemoryPool;
-const store = main.store;
+const store = nativeInterface.store;
 const SegmentSelector = coreTypes.SegmentSelector;
 const LongOrdinal = coreTypes.LongOrdinal;
