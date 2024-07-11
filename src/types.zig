@@ -69,3 +69,34 @@ pub fn StorageFrame(
 
 pub const RegisterFrame = StorageFrame(Ordinal, 16);
 pub const MemoryPool = StorageFrame(ByteOrdinal, 4 * 1024 * 1024 * 1024);
+
+pub const SegmentSelector = packed struct {
+    _: u6 = 0b111_111,
+    index: u26 = 0,
+
+    const None = SegmentSelector{};
+    pub fn toWholeValue(self: *const SegmentSelector) Ordinal {
+        return @as(*const Ordinal, @ptrCast(self)).*;
+    }
+    pub fn make(value: u26) SegmentSelector {
+        return SegmentSelector{ .index = value };
+    }
+    pub fn valid(self: *const SegmentSelector) bool {
+        return self._ == 0b111_111;
+    }
+};
+test "SegmentSelector tests" {
+    try expectEqual(@sizeOf(Ordinal), @sizeOf(SegmentSelector));
+    const t0 = SegmentSelector.make(0);
+    try expectEqual(t0.toWholeValue(), 0b111_111);
+    try expect(t0.valid());
+    var t1 = SegmentSelector.make(0x10);
+    try expectEqual(t1.toWholeValue(), 0b10000_111111);
+    try expect(t1.valid());
+    t1._ = 0b010101;
+    try expect(!t1.valid());
+}
+
+const std = @import("std");
+const expect = std.testing.expect;
+const expectEqual = std.testing.expectEqual;
