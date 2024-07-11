@@ -31,22 +31,21 @@ const stdout = io.getStdOut().writer();
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 
-const Operand = u5;
-const ByteInteger = i8;
-const ByteOrdinal = u8;
-const ShortInteger = i16;
-const ShortOrdinal = u16;
-const Integer = i32;
-const Ordinal = u32;
-const LongOrdinal = u64;
-const LongInteger = i64;
-const TripleOrdinal = u96;
-const QuadOrdinal = u128;
-const Address = u32;
+const coreTypes = @import("types.zig");
+const ByteOrdinal = coreTypes.ByteOrdinal;
+const ByteInteger = coreTypes.ByteInteger;
+const ShortOrdinal = coreTypes.ShortOrdinal;
+const ShortInteger = coreTypes.ShortInteger;
+const Ordinal = coreTypes.Ordinal;
+const Integer = coreTypes.Integer;
+const LongOrdinal = coreTypes.LongOrdinal;
+const LongInteger = coreTypes.LongInteger;
+const TripleOrdinal = coreTypes.TripleOrdinal;
+const QuadOrdinal = coreTypes.QuadOrdinal;
+const Operand = coreTypes.Operand;
+const ExtendedReal = coreTypes.ExtendedReal;
+const Address = coreTypes.Address;
 
-const Real = f32;
-const LongReal = f64;
-const ExtendedReal = f80;
 fn StorageFrame(
     comptime T: type,
     comptime count: comptime_int,
