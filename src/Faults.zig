@@ -21,15 +21,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-
-const std = @import("std");
-const expect = std.testing.expect;
-const expectEqual = std.testing.expectEqual;
-const coreTypes = @import("types.zig");
-const Ordinal = coreTypes.Ordinal;
-const Address = coreTypes.Address;
-
-const FaultProcedureEntry = packed struct {
+pub const FaultProcedureEntry = packed struct {
     @"procedure address": u32 = 0,
     @"segment selector": u32 = 0,
     pub fn getProcedureIndex(self: *const FaultProcedureEntry) Address {
@@ -40,7 +32,7 @@ const FaultProcedureEntry = packed struct {
     }
 };
 
-const FaultTable = packed struct {
+pub const FaultTable = packed struct {
     @"override entry": FaultProcedureEntry,
     @"trace fault entry": FaultProcedureEntry,
     @"operation fault entry": FaultProcedureEntry,
@@ -61,7 +53,7 @@ const FaultTable = packed struct {
         return @as(*u2048, @ptrCast(self)).*;
     }
 };
-const FaultKind = packed struct {
+pub const FaultKind = packed struct {
     subtype: u8 = 0,
     unused2: u8 = 0,
     type: u8 = 0,
@@ -181,7 +173,7 @@ const FaultKind = packed struct {
     }
 };
 
-const Faults = error{
+pub const Faults = error{
     Parallel,
     InstructionTrace,
     BranchTrace,
@@ -244,7 +236,7 @@ pub fn shouldSaveReturnAddress(self: Faults) bool {
         else => false,
     };
 }
-const FaultRecord = struct {
+pub const FaultRecord = struct {
     unused: u32 = 0,
     @"override fault data": u96 = 0,
     @"fault data": u96 = 0,
@@ -284,3 +276,16 @@ test "test faults saving return addresses" {
     try expect(shouldSaveReturnAddress(Faults.FloatingPointInexact));
     try expect(shouldSaveReturnAddress(Faults.FloatingPointReservedEncoding));
 }
+
+// you can include stuff after use!
+
+const std = @import("std");
+const coreTypes = @import("types.zig");
+const main = @import("main.zig");
+const expect = std.testing.expect;
+const expectEqual = std.testing.expectEqual;
+const Ordinal = coreTypes.Ordinal;
+const TripleOrdinal = coreTypes.TripleOrdinal;
+const Address = coreTypes.Address;
+const MemoryPool = coreTypes.MemoryPool;
+const store = main.store;

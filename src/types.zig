@@ -59,3 +59,13 @@ pub const InstructionClass = enum(u2) {
         };
     }
 };
+
+pub fn StorageFrame(
+    comptime T: type,
+    comptime count: comptime_int,
+) type {
+    return [count]T;
+}
+
+pub const RegisterFrame = StorageFrame(Ordinal, 16);
+pub const MemoryPool = StorageFrame(ByteOrdinal, 4 * 1024 * 1024 * 1024);

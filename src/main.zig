@@ -50,16 +50,8 @@ const FaultRecord = faults.FaultRecord;
 const Faults = faults.Faults;
 const FaultKind = faults.FaultKind;
 const FaultTable = faults.FaultTable;
-
-fn StorageFrame(
-    comptime T: type,
-    comptime count: comptime_int,
-) type {
-    return [count]T;
-}
-
-const RegisterFrame = StorageFrame(Ordinal, 16);
-const MemoryPool = StorageFrame(ByteOrdinal, 4 * 1024 * 1024 * 1024);
+const RegisterFrame = coreTypes.RegisterFrame;
+const MemoryPool = coreTypes.MemoryPool;
 
 const LocalRegisterFrame = struct {
     contents: RegisterFrame = RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -123,7 +115,7 @@ const LocalRegisterFrame = struct {
 
 // need to access byte by byte so we can reconstruct in a platform independent
 // way
-fn load(
+pub fn load(
     comptime T: type,
     pool: *MemoryPool,
     address: Address,
@@ -232,7 +224,7 @@ fn load(
         else => @compileError("Requested type not allowed!"),
     };
 }
-fn store(
+pub fn store(
     comptime T: type,
     pool: *MemoryPool,
     address: Address,
