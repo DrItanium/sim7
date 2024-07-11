@@ -29,7 +29,7 @@ const stdin = io.getStdIn().reader();
 const stdout = io.getStdOut().writer();
 
 const expect = std.testing.expect;
-const expect_eq = std.testing.expectEqual;
+const expectEqual = std.testing.expectEqual;
 
 const Operand = u5;
 const ByteInteger = i8;
@@ -1040,13 +1040,13 @@ const GenericSegmentDescriptor = packed struct {
     }
 };
 test "segment descriptor" {
-    try expect_eq(@sizeOf(GenericSegmentDescriptor), @sizeOf(QuadOrdinal));
+    try expectEqual(@sizeOf(GenericSegmentDescriptor), @sizeOf(QuadOrdinal));
     const v0 = GenericSegmentDescriptor{};
-    try expect_eq(v0.wholeValue(), 0);
+    try expectEqual(v0.wholeValue(), 0);
     var v1 = GenericSegmentDescriptor{};
-    try expect_eq(v1.wholeValue(), 0);
+    try expectEqual(v1.wholeValue(), 0);
     v1.setWholeValue(0xFDED);
-    try expect_eq(v1.wholeValue(), 0xFDED);
+    try expectEqual(v1.wholeValue(), 0xFDED);
 }
 const FaultProcedureEntry = packed struct {
     @"procedure address": u32 = 0,
@@ -1428,7 +1428,7 @@ const PreviousFramePointer = packed struct {
     }
 };
 test "check PreviousFramePointer" {
-    try expect_eq(@sizeOf(PreviousFramePointer), @sizeOf(Ordinal));
+    try expectEqual(@sizeOf(PreviousFramePointer), @sizeOf(Ordinal));
 }
 const SegmentSelector = packed struct {
     _: u6 = 0b111_111,
@@ -1446,12 +1446,12 @@ const SegmentSelector = packed struct {
     }
 };
 test "SegmentSelector tests" {
-    try expect_eq(@sizeOf(Ordinal), @sizeOf(SegmentSelector));
+    try expectEqual(@sizeOf(Ordinal), @sizeOf(SegmentSelector));
     const t0 = SegmentSelector.make(0);
-    try expect_eq(t0.toWholeValue(), 0b111_111);
+    try expectEqual(t0.toWholeValue(), 0b111_111);
     try expect(t0.valid());
     var t1 = SegmentSelector.make(0x10);
-    try expect_eq(t1.toWholeValue(), 0b10000_111111);
+    try expectEqual(t1.toWholeValue(), 0b10000_111111);
     try expect(t1.valid());
     t1._ = 0b010101;
     try expect(!t1.valid());
@@ -1478,7 +1478,7 @@ const FaultTableEntry = packed struct {
 };
 
 test "FaultTableEntry tests" {
-    try expect_eq(@sizeOf(LongOrdinal), @sizeOf(FaultTableEntry));
+    try expectEqual(@sizeOf(LongOrdinal), @sizeOf(FaultTableEntry));
 }
 
 // there really isn't a point in keeping the instruction processing within the
@@ -2862,8 +2862,8 @@ test "io system test" {
     };
     const compareMilli = std.time.milliTimestamp();
     const compareMicro = std.time.microTimestamp();
-    try expect_eq(core.loadFromMemory(Ordinal, CPUClockRateAddress), CPUClockRate);
-    try expect_eq(core.loadFromMemory(Ordinal, SystemClockRateAddress), SystemClockRate);
+    try expectEqual(core.loadFromMemory(Ordinal, CPUClockRateAddress), CPUClockRate);
+    try expectEqual(core.loadFromMemory(Ordinal, SystemClockRateAddress), SystemClockRate);
     try expect(core.loadFromMemory(LongInteger, MillisecondsTimestampAddress) >= compareMilli);
     try expect(core.loadFromMemory(LongInteger, MicrosecondsTimestampAddress) >= compareMicro);
     std.debug.print("\n\n0x{x} vs 0x{x}\n0x{x} vs 0x{x}\n", .{
@@ -2899,7 +2899,7 @@ test "sizeof sanity check" {
     try expect(@sizeOf(ArithmeticControls) == 4);
     try expect(@sizeOf(ProcessControls) == 4);
     try expect(@sizeOf(TraceControls) == 4);
-    try expect_eq(@sizeOf(FaultTable), 256);
+    try expectEqual(@sizeOf(FaultTable), 256);
 }
 
 test "instruction size tests" {
@@ -3027,14 +3027,14 @@ test "allocation test3" {
         val.* = @truncate(ind + 0x0706050403020100);
     }
     for (buffer, 0..) |val, ind| {
-        try expect_eq(val, (ind + 0x0706050403020100));
+        try expectEqual(val, (ind + 0x0706050403020100));
     }
     // okay, so now we need to see if we can view the various components
     //
     // it is trivial to go from larger to smaller!
     const buffer2: *const [@sizeOf(u64)]u8 = @ptrCast(&buffer[0]);
     for (buffer2, 0..) |value, idx| {
-        try expect_eq(value, idx);
+        try expectEqual(value, idx);
     }
     // view as two ordinals instead
     const buffer3: *const [@sizeOf(u64) / @sizeOf(Ordinal)]Ordinal = @ptrCast(&buffer[0]);
@@ -3053,19 +3053,19 @@ test "allocation test4" {
         val.* = @truncate(ind + combinatorial);
     }
     for (buffer, 0..) |val, ind| {
-        try expect_eq(val, (ind + combinatorial));
+        try expectEqual(val, (ind + combinatorial));
     }
     // okay, so now we need to see if we can view the various components
     //
     // it is trivial to go from larger to smaller!
     const buffer2: *const [@sizeOf(AllocationType)]u8 = @ptrCast(&buffer[0]);
     for (buffer2, 0..) |value, idx| {
-        try expect_eq(value, idx);
+        try expectEqual(value, idx);
     }
 }
 
 test "Structure Size Check 2" {
-    try expect_eq(@sizeOf(MemoryPool), (4 * 1024 * 1024 * 1024));
+    try expectEqual(@sizeOf(MemoryPool), (4 * 1024 * 1024 * 1024));
 }
 test "memory pool load/store test" {
     const allocator = std.heap.page_allocator;
@@ -3087,27 +3087,27 @@ test "memory pool load/store test" {
     store(LongOrdinal, buffer, 16, 0xccbbaa99_88776655);
     store(ShortOrdinal, buffer, 24, 0xeedd);
     store(ByteOrdinal, buffer, 26, 0xff);
-    try expect_eq(load(ByteOrdinal, buffer, 16), 0x55);
-    try expect_eq(load(ByteOrdinal, buffer, 0), 0xED);
-    try expect_eq(load(ByteOrdinal, buffer, 1), 0xFD);
-    try expect_eq(load(ByteInteger, buffer, 2), -1);
-    try expect_eq(load(ShortOrdinal, buffer, 0), 0xFDED);
-    try expect_eq(load(ShortInteger, buffer, 2), -1);
-    try expect_eq(load(ShortOrdinal, buffer, 2), 0xFFFF);
-    try expect_eq(load(Ordinal, buffer, 0), 0xFFFFFDED);
-    try expect_eq(load(TripleOrdinal, buffer, 0), 0x89674523_01efcdab_ffffFDED);
-    try expect_eq(load(TripleOrdinal, buffer, 1), 0x1189674523_01efcdab_ffffFD);
-    try expect_eq(load(TripleOrdinal, buffer, 2), 0x221189674523_01efcdab_ffff);
-    try expect_eq(load(QuadOrdinal, buffer, 0), 0x44332211_89674523_01efcdab_ffffFDED);
-    try expect_eq(load(QuadOrdinal, buffer, 1), 0x55443322_11896745_2301efcd_abffffFD);
-    try expect_eq(load(ShortOrdinal, buffer, 24), 0xeedd);
+    try expectEqual(load(ByteOrdinal, buffer, 16), 0x55);
+    try expectEqual(load(ByteOrdinal, buffer, 0), 0xED);
+    try expectEqual(load(ByteOrdinal, buffer, 1), 0xFD);
+    try expectEqual(load(ByteInteger, buffer, 2), -1);
+    try expectEqual(load(ShortOrdinal, buffer, 0), 0xFDED);
+    try expectEqual(load(ShortInteger, buffer, 2), -1);
+    try expectEqual(load(ShortOrdinal, buffer, 2), 0xFFFF);
+    try expectEqual(load(Ordinal, buffer, 0), 0xFFFFFDED);
+    try expectEqual(load(TripleOrdinal, buffer, 0), 0x89674523_01efcdab_ffffFDED);
+    try expectEqual(load(TripleOrdinal, buffer, 1), 0x1189674523_01efcdab_ffffFD);
+    try expectEqual(load(TripleOrdinal, buffer, 2), 0x221189674523_01efcdab_ffff);
+    try expectEqual(load(QuadOrdinal, buffer, 0), 0x44332211_89674523_01efcdab_ffffFDED);
+    try expectEqual(load(QuadOrdinal, buffer, 1), 0x55443322_11896745_2301efcd_abffffFD);
+    try expectEqual(load(ShortOrdinal, buffer, 24), 0xeedd);
 }
 
 test "alterbit logic" {
-    try expect_eq(alterbit(0, (1 << 24), false), 0x0100_0000);
+    try expectEqual(alterbit(0, (1 << 24), false), 0x0100_0000);
 }
 test "modify logic" {
-    try expect_eq(modify(0xFF, 0xFFFF, 0), 0xFF);
+    try expectEqual(modify(0xFF, 0xFFFF, 0), 0xFF);
 }
 test "core startup test" {
     const allocator = std.heap.page_allocator;
@@ -3142,6 +3142,6 @@ test "core startup test" {
         // there should be a checksum failure
         return error.@"Expected Checksum to fail!";
     } else |err| {
-        try expect_eq(err, BootResult.ChecksumFail);
+        try expectEqual(err, BootResult.ChecksumFail);
     }
 }
