@@ -513,19 +513,6 @@ const BootResult = error{
     ChecksumFail,
     SelfTestFailure,
 };
-const CPUClockRateAddress = 0xFE00_0000;
-const SystemClockRateAddress = 0xFE00_0004;
-const SerialIOAddress = 0xFE00_0008;
-const SerialFlushAddress = 0xFE00_000C;
-const MillisecondsTimestampAddress = 0xFE00_0040;
-const MicrosecondsTimestampAddress = 0xFE00_0044;
-const NanosecondsTimestampAddress = 0xFE00_0048;
-const SystemClockRate: Ordinal = 20 * 1000 * 1000;
-const CPUClockRate: Ordinal = SystemClockRate / 2;
-const IOSpaceMemoryUnderlayStart = 0xFE10_0000;
-const IOSpaceMemoryUnderlayEnd = 0xFEFF_FFFF;
-const IOSpaceStart = 0xFE00_0000;
-const IOSpaceEnd = 0xFEFF_FFFF;
 
 const Core = struct {
     memory: *MemoryPool = undefined,
@@ -863,114 +850,12 @@ const Core = struct {
     fn moveRegisterValue(self: *Core, dest: Operand, src: Operand) void {
         self.setRegisterValue(dest, self.getRegisterValue(src));
     }
-    fn storeToIOMemory(
-        self: *Core,
-        comptime T: type,
-        addr: Address,
-        value: T,
-    ) void {
-        switch (addr) {
-            IOSpaceMemoryUnderlayStart...IOSpaceMemoryUnderlayEnd => nativeInterface.store(T, self.memory, addr, value),
-            SerialIOAddress => {
-                // putc
-                switch (T) {
-                    // read from standard input
-                    ByteOrdinal,
-                    ByteInteger,
-                    ShortOrdinal,
-                    ShortInteger,
-                    Ordinal,
-                    Integer,
-                    LongOrdinal,
-                    LongInteger,
-                    TripleOrdinal,
-                    QuadOrdinal,
-                    => _ = stdout.writeByte(@truncate(value)) catch {},
-                    FaultRecord, *FaultRecord, *const FaultRecord => {},
-                    else => @compileError("Unsupported load types provided"),
-                }
-            },
-            //SerialFlushAddress => stdout.sync() catch {},
-            else => {},
-        }
-    }
-    fn loadFromIOMemory(
-        self: *Core,
-        comptime T: type,
-        addr: Address,
-    ) T {
-        return switch (addr) {
-            IOSpaceMemoryUnderlayStart...IOSpaceMemoryUnderlayEnd => nativeInterface.load(T, self.memory, addr),
-            CPUClockRateAddress => switch (T) {
-                Ordinal, Integer => CPUClockRate,
-                FaultTableEntry => FaultTableEntry.None,
-                GenericSegmentDescriptor => GenericSegmentDescriptor{},
-                else => 0,
-            },
-            SystemClockRateAddress => switch (T) {
-                Ordinal, Integer => SystemClockRate,
-                FaultTableEntry => FaultTableEntry.None,
-                GenericSegmentDescriptor => GenericSegmentDescriptor{},
-                else => 0,
-            },
-            SerialIOAddress => switch (T) {
-                // read from standard input
-                ByteOrdinal,
-                ShortOrdinal,
-                Ordinal,
-                LongOrdinal,
-                TripleOrdinal,
-                QuadOrdinal,
-                => stdin.readByte() catch @as(T, math.maxInt(T)),
-                ByteInteger,
-                ShortInteger,
-                Integer,
-                LongInteger,
-                => stdin.readByteSigned() catch @as(T, math.minInt(T)),
-                FaultTableEntry => FaultTableEntry.None,
-                GenericSegmentDescriptor => GenericSegmentDescriptor{},
-                else => @compileError("Unsupported load types provided"),
-            },
-            MicrosecondsTimestampAddress, MillisecondsTimestampAddress => scope: {
-                // strange packed alignment work happens here so you can get a
-                // 64-bit value out based on the base alignment
-                switch (T) {
-                    FaultTableEntry => break :scope FaultTableEntry.None,
-                    GenericSegmentDescriptor => break :scope GenericSegmentDescriptor{},
-                    else => switch (@typeInfo(T)) {
-                        .Int => |info| {
-                            const tval = switch (comptime addr) {
-                                MillisecondsTimestampAddress => std.time.milliTimestamp(),
-                                MicrosecondsTimestampAddress => std.time.microTimestamp(),
-                                else => unreachable,
-                            };
-                            if (info.signedness == std.builtin.Signedness.signed) {
-                                break :scope if (info.bits >= 64) tval else @truncate(tval);
-                            } else {
-                                const val: u64 = @bitCast(tval);
-                                break :scope if (info.bits >= 64) val else @truncate(val);
-                            }
-                        },
-                        else => @compileError("unsupported load type provided"),
-                    },
-                }
-            },
-            else => switch (T) {
-                FaultTableEntry => FaultTableEntry.None,
-                GenericSegmentDescriptor => GenericSegmentDescriptor{},
-                else => 0,
-            },
-        };
-    }
     fn loadFromMemory(
         self: *Core,
         comptime T: type,
         addr: Address,
     ) T {
-        return switch (addr) {
-            IOSpaceStart...IOSpaceEnd => self.loadFromIOMemory(T, addr),
-            else => nativeInterface.load(T, self.memory, addr),
-        };
+        return nativeInterface.load(T, self.memory, addr);
     }
     fn storeToMemory(
         self: *Core,
@@ -978,11 +863,7 @@ const Core = struct {
         addr: Address,
         value: T,
     ) void {
-        switch (addr) {
-            // io space detection
-            IOSpaceStart...IOSpaceEnd => self.storeToIOMemory(T, addr, value),
-            else => nativeInterface.store(T, self.memory, addr, value),
-        }
+        nativeInterface.store(T, self.memory, addr, value);
     }
     fn atomicLoad(
         self: *Core,
@@ -1866,7 +1747,7 @@ pub fn main() !void {
     // part of the system tests
     const message = "i960 Simulator\n";
     for (message) |x| {
-        core.storeToMemory(@TypeOf(x), SerialIOAddress, x);
+        core.storeToMemory(@TypeOf(x), nativeInterface.SerialIOAddress, x);
     }
     try core.start();
     while (core.continueExecuting) {
@@ -1888,27 +1769,23 @@ test "io system test" {
     };
     const compareMilli = std.time.milliTimestamp();
     const compareMicro = std.time.microTimestamp();
-    try expectEqual(core.loadFromMemory(Ordinal, CPUClockRateAddress), CPUClockRate);
-    try expectEqual(core.loadFromMemory(Ordinal, SystemClockRateAddress), SystemClockRate);
-    try expect(core.loadFromMemory(LongInteger, MillisecondsTimestampAddress) >= compareMilli);
-    try expect(core.loadFromMemory(LongInteger, MicrosecondsTimestampAddress) >= compareMicro);
+    try expectEqual(core.loadFromMemory(Ordinal, nativeInterface.CPUClockRateAddress), nativeInterface.CPUClockRate);
+    try expectEqual(core.loadFromMemory(Ordinal, nativeInterface.SystemClockRateAddress), nativeInterface.SystemClockRate);
+    try expect(core.loadFromMemory(LongInteger, nativeInterface.MillisecondsTimestampAddress) >= compareMilli);
+    try expect(core.loadFromMemory(LongInteger, nativeInterface.MicrosecondsTimestampAddress) >= compareMicro);
     std.debug.print("\n\n0x{x} vs 0x{x}\n0x{x} vs 0x{x}\n", .{
-        core.loadFromMemory(LongInteger, MillisecondsTimestampAddress),
+        core.loadFromMemory(LongInteger, nativeInterface.MillisecondsTimestampAddress),
         compareMilli,
-        core.loadFromMemory(LongInteger, MicrosecondsTimestampAddress),
+        core.loadFromMemory(LongInteger, nativeInterface.MicrosecondsTimestampAddress),
         compareMicro,
     });
     // store operations
-    core.storeToMemory(ByteOrdinal, SerialIOAddress, 'A');
-    core.storeToMemory(Ordinal, SerialIOAddress, 'A');
+    core.storeToMemory(ByteOrdinal, nativeInterface.SerialIOAddress, 'A');
+    core.storeToMemory(Ordinal, nativeInterface.SerialIOAddress, 'A');
     //core.storeToMemory(ByteOrdinal, 0xFE00_000C, 0);
     // only activate this one once I figure out a way to input data to standard in
     //try expect(core.loadFromMemory(Ordinal, 0xFE00_0008) != 0xFFFF_FFFF);
 
-}
-
-test "Opcodes Sanity Checks" {
-    try expect(@intFromEnum(DecodedOpcode.cmpibo) == 0x3f);
 }
 
 test "Opcodes Sanity Checks 2" {

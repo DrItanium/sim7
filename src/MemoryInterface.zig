@@ -22,6 +22,7 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 const std = @import("std");
+const math = @import("std").math;
 const coreTypes = @import("types.zig");
 const faults = @import("Faults.zig");
 const opcodes = @import("Opcode.zig");
@@ -51,9 +52,13 @@ const SegmentSelector = coreTypes.SegmentSelector;
 const FaultTableEntry = faults.FaultTableEntry;
 const GenericSegmentDescriptor = main.GenericSegmentDescriptor;
 
+const io = std.io;
+const stdin = io.getStdIn().reader();
+const stdout = io.getStdOut().writer();
+
 // need to access byte by byte so we can reconstruct in a platform independent
 // way
-pub fn load(
+fn memoryLoad(
     comptime T: type,
     pool: *MemoryPool,
     address: Address,
@@ -162,7 +167,7 @@ pub fn load(
         else => @compileError("Requested type not allowed!"),
     };
 }
-pub fn store(
+fn memoryStore(
     comptime T: type,
     pool: *MemoryPool,
     address: Address,
@@ -221,6 +226,142 @@ pub fn store(
         },
         *FaultRecord, *const FaultRecord, FaultRecord => value.storeToMemory(pool, address),
         else => @compileError("Requested type not supported!"),
+    }
+}
+
+pub const CPUClockRateAddress = 0xFE00_0000;
+pub const SystemClockRateAddress = 0xFE00_0004;
+pub const SerialIOAddress = 0xFE00_0008;
+pub const SerialFlushAddress = 0xFE00_000C;
+pub const MillisecondsTimestampAddress = 0xFE00_0040;
+pub const MicrosecondsTimestampAddress = 0xFE00_0044;
+pub const NanosecondsTimestampAddress = 0xFE00_0048;
+pub const SystemClockRate: Ordinal = 20 * 1000 * 1000;
+pub const CPUClockRate: Ordinal = SystemClockRate / 2;
+pub const IOSpaceMemoryUnderlayStart = 0xFE10_0000;
+pub const IOSpaceMemoryUnderlayEnd = 0xFEFF_FFFF;
+pub const IOSpaceStart = 0xFE00_0000;
+pub const IOSpaceEnd = 0xFEFF_FFFF;
+
+fn loadFromIOMemory(
+    comptime T: type,
+    pool: *MemoryPool,
+    addr: Address,
+) T {
+    return switch (addr) {
+        IOSpaceMemoryUnderlayStart...IOSpaceMemoryUnderlayEnd => memoryLoad(T, pool, addr),
+        CPUClockRateAddress => switch (T) {
+            Ordinal, Integer => CPUClockRate,
+            FaultTableEntry => FaultTableEntry.None,
+            GenericSegmentDescriptor => GenericSegmentDescriptor{},
+            else => 0,
+        },
+        SystemClockRateAddress => switch (T) {
+            Ordinal, Integer => SystemClockRate,
+            FaultTableEntry => FaultTableEntry.None,
+            GenericSegmentDescriptor => GenericSegmentDescriptor{},
+            else => 0,
+        },
+        SerialIOAddress => switch (T) {
+            // read from standard input
+            ByteOrdinal,
+            ShortOrdinal,
+            Ordinal,
+            LongOrdinal,
+            TripleOrdinal,
+            QuadOrdinal,
+            => stdin.readByte() catch @as(T, math.maxInt(T)),
+            ByteInteger,
+            ShortInteger,
+            Integer,
+            LongInteger,
+            => stdin.readByteSigned() catch @as(T, math.minInt(T)),
+            FaultTableEntry => FaultTableEntry.None,
+            GenericSegmentDescriptor => GenericSegmentDescriptor{},
+            else => @compileError("Unsupported load types provided"),
+        },
+        MicrosecondsTimestampAddress, MillisecondsTimestampAddress => scope: {
+            // strange packed alignment work happens here so you can get a
+            // 64-bit value out based on the base alignment
+            switch (T) {
+                FaultTableEntry => break :scope FaultTableEntry.None,
+                GenericSegmentDescriptor => break :scope GenericSegmentDescriptor{},
+                else => switch (@typeInfo(T)) {
+                    .Int => |info| {
+                        const tval = switch (comptime addr) {
+                            MillisecondsTimestampAddress => std.time.milliTimestamp(),
+                            MicrosecondsTimestampAddress => std.time.microTimestamp(),
+                            else => unreachable,
+                        };
+                        if (info.signedness == std.builtin.Signedness.signed) {
+                            break :scope if (info.bits >= 64) tval else @truncate(tval);
+                        } else {
+                            const val: u64 = @bitCast(tval);
+                            break :scope if (info.bits >= 64) val else @truncate(val);
+                        }
+                    },
+                    else => @compileError("unsupported load type provided"),
+                },
+            }
+        },
+        else => switch (T) {
+            FaultTableEntry => FaultTableEntry.None,
+            GenericSegmentDescriptor => GenericSegmentDescriptor{},
+            else => 0,
+        },
+    };
+}
+fn storeToIOMemory(
+    comptime T: type,
+    pool: *MemoryPool,
+    addr: Address,
+    value: T,
+) void {
+    switch (addr) {
+        IOSpaceMemoryUnderlayStart...IOSpaceMemoryUnderlayEnd => memoryStore(T, pool, addr, value),
+        SerialIOAddress => {
+            // putc
+            switch (T) {
+                // read from standard input
+                ByteOrdinal,
+                ByteInteger,
+                ShortOrdinal,
+                ShortInteger,
+                Ordinal,
+                Integer,
+                LongOrdinal,
+                LongInteger,
+                TripleOrdinal,
+                QuadOrdinal,
+                => _ = stdout.writeByte(@truncate(value)) catch {},
+                FaultRecord, *FaultRecord, *const FaultRecord => {},
+                else => @compileError("Unsupported load types provided"),
+            }
+        },
+        //SerialFlushAddress => stdout.sync() catch {},
+        else => {},
+    }
+}
+pub fn load(
+    comptime T: type,
+    pool: *MemoryPool,
+    address: Address,
+) T {
+    return switch (address) {
+        IOSpaceStart...IOSpaceEnd => loadFromIOMemory(T, pool, address),
+        else => memoryLoad(T, pool, address),
+    };
+}
+pub fn store(
+    comptime T: type,
+    pool: *MemoryPool,
+    address: Address,
+    value: T,
+) void {
+    switch (address) {
+        // io space detection
+        IOSpaceStart...IOSpaceEnd => storeToIOMemory(T, pool, address, value),
+        else => memoryStore(T, pool, address, value),
     }
 }
 

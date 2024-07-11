@@ -22,6 +22,8 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 const std = @import("std");
+const expect = std.testing.expect;
+const expectEqual = std.testing.expectEqual;
 const coreTypes = @import("types.zig");
 
 const InstructionClass = coreTypes.InstructionClass;
@@ -507,3 +509,7 @@ pub const DecodedOpcode = enum(u12) {
         return @truncate(self.getPrimaryOpcode() & 0b111);
     }
 };
+
+test "Opcodes Sanity Checks" {
+    try expect(@intFromEnum(DecodedOpcode.cmpibo) == 0x3f);
+}
