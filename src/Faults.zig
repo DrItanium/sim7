@@ -264,6 +264,31 @@ pub const FaultRecord = struct {
     }
 };
 
+pub const FaultTableEntry = packed struct {
+    handlerFunctionAddress: Ordinal = 0,
+    selector: SegmentSelector = SegmentSelector{},
+    pub const None = FaultTableEntry{};
+    pub fn isSystemTableEntry(self: *const FaultTableEntry) bool {
+        return ((self.handlerFunctionAddress & 0b11) == 0b10);
+    }
+    pub fn isLocalProcedureEntry(self: *const FaultTableEntry) bool {
+        return ((self.handlerFunctionAddress & 0b11) == 0);
+    }
+    pub fn getFaultHandlerProcedureNumber(self: *const FaultTableEntry) Address {
+        return ((self.handlerFunctionAddress & 0xFFFF_FFFC));
+    }
+    pub fn make(value: LongOrdinal) FaultTableEntry {
+        return FaultTableEntry{
+            .handlerFunctionAddress = @truncate(value),
+            .selector = SegmentSelector.make(@truncate(value >> 32)),
+        };
+    }
+};
+
+test "FaultTableEntry tests" {
+    try expectEqual(@sizeOf(LongOrdinal), @sizeOf(FaultTableEntry));
+}
+
 test "test faults saving return addresses" {
     try expect(shouldSaveReturnAddress(Faults.EventNotice));
     try expect(shouldSaveReturnAddress(Faults.IntegerOverflow));
@@ -289,3 +314,5 @@ const TripleOrdinal = coreTypes.TripleOrdinal;
 const Address = coreTypes.Address;
 const MemoryPool = coreTypes.MemoryPool;
 const store = main.store;
+const SegmentSelector = coreTypes.SegmentSelector;
+const LongOrdinal = coreTypes.LongOrdinal;

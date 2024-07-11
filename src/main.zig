@@ -53,6 +53,7 @@ const FaultTable = faults.FaultTable;
 const RegisterFrame = coreTypes.RegisterFrame;
 const MemoryPool = coreTypes.MemoryPool;
 const SegmentSelector = coreTypes.SegmentSelector;
+const FaultTableEntry = faults.FaultTableEntry;
 
 const LocalRegisterFrame = struct {
     contents: RegisterFrame = RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -1153,30 +1154,6 @@ const PreviousFramePointer = packed struct {
 };
 test "check PreviousFramePointer" {
     try expectEqual(@sizeOf(PreviousFramePointer), @sizeOf(Ordinal));
-}
-const FaultTableEntry = packed struct {
-    handlerFunctionAddress: Ordinal = 0,
-    selector: SegmentSelector = SegmentSelector{},
-    const None = FaultTableEntry{};
-    pub fn isSystemTableEntry(self: *const FaultTableEntry) bool {
-        return ((self.handlerFunctionAddress & 0b11) == 0b10);
-    }
-    pub fn isLocalProcedureEntry(self: *const FaultTableEntry) bool {
-        return ((self.handlerFunctionAddress & 0b11) == 0);
-    }
-    pub fn getFaultHandlerProcedureNumber(self: *const FaultTableEntry) Address {
-        return ((self.handlerFunctionAddress & 0xFFFF_FFFC));
-    }
-    pub fn make(value: LongOrdinal) FaultTableEntry {
-        return FaultTableEntry{
-            .handlerFunctionAddress = @truncate(value),
-            .selector = SegmentSelector.make(@truncate(value >> 32)),
-        };
-    }
-};
-
-test "FaultTableEntry tests" {
-    try expectEqual(@sizeOf(LongOrdinal), @sizeOf(FaultTableEntry));
 }
 
 // there really isn't a point in keeping the instruction processing within the
