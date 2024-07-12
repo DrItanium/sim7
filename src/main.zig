@@ -34,7 +34,7 @@ const expectEqual = std.testing.expectEqual;
 const coreTypes = @import("types.zig");
 const faults = @import("Faults.zig");
 const opcodes = @import("Opcode.zig");
-const nativeInterface = @import("MemoryInterface.zig");
+const NativeInterface = @import("MemoryInterface.zig");
 const ByteOrdinal = coreTypes.ByteOrdinal;
 const ByteInteger = coreTypes.ByteInteger;
 const ShortOrdinal = coreTypes.ShortOrdinal;
@@ -515,7 +515,6 @@ const BootResult = error{
 };
 
 const Core = struct {
-    memory: *MemoryPool = undefined,
     globals: RegisterFrame = RegisterFrame{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
     locals: [4]LocalRegisterFrame = [_]LocalRegisterFrame{
         LocalRegisterFrame{},
@@ -855,7 +854,8 @@ const Core = struct {
         comptime T: type,
         addr: Address,
     ) T {
-        return nativeInterface.load(T, self.memory, addr);
+        _ = self;
+        return NativeInterface.load(T, addr);
     }
     fn storeToMemory(
         self: *Core,
@@ -863,7 +863,8 @@ const Core = struct {
         addr: Address,
         value: T,
     ) void {
-        nativeInterface.store(T, self.memory, addr, value);
+        _ = self;
+        NativeInterface.store(T, addr, value);
     }
     fn atomicLoad(
         self: *Core,
@@ -1735,19 +1736,13 @@ fn alterbit(src: Ordinal, bitpos: Ordinal, clearBit: bool) Ordinal {
 pub fn main() !void {
     //std.debug.print("i960 Simulator\n", .{});
     // allocate all of the memory at once
-    const allocator = std.heap.page_allocator;
-    const buffer = try allocator.create(MemoryPool);
-    defer allocator.destroy(buffer);
-    for (buffer) |*cell| {
-        cell.* = 0;
-    }
-    var core = Core{
-        .memory = buffer,
-    };
+    NativeInterface.begin();
+    defer NativeInterface.end();
+    var core = Core{};
     // part of the system tests
     const message = "i960 Simulator\n";
     for (message) |x| {
-        core.storeToMemory(@TypeOf(x), nativeInterface.SerialIOAddress, x);
+        core.storeToMemory(@TypeOf(x), NativeInterface.SerialIOAddress, x);
     }
     try core.start();
     while (core.continueExecuting) {
@@ -1764,24 +1759,22 @@ pub fn main() !void {
 
 // test cases
 test "io system test" {
-    var core = Core{
-        .memory = undefined,
-    };
+    var core = Core{};
     const compareMilli = std.time.milliTimestamp();
     const compareMicro = std.time.microTimestamp();
-    try expectEqual(core.loadFromMemory(Ordinal, nativeInterface.CPUClockRateAddress), nativeInterface.CPUClockRate);
-    try expectEqual(core.loadFromMemory(Ordinal, nativeInterface.SystemClockRateAddress), nativeInterface.SystemClockRate);
-    try expect(core.loadFromMemory(LongInteger, nativeInterface.MillisecondsTimestampAddress) >= compareMilli);
-    try expect(core.loadFromMemory(LongInteger, nativeInterface.MicrosecondsTimestampAddress) >= compareMicro);
+    try expectEqual(core.loadFromMemory(Ordinal, NativeInterface.CPUClockRateAddress), NativeInterface.CPUClockRate);
+    try expectEqual(core.loadFromMemory(Ordinal, NativeInterface.SystemClockRateAddress), NativeInterface.SystemClockRate);
+    try expect(core.loadFromMemory(LongInteger, NativeInterface.MillisecondsTimestampAddress) >= compareMilli);
+    try expect(core.loadFromMemory(LongInteger, NativeInterface.MicrosecondsTimestampAddress) >= compareMicro);
     std.debug.print("\n\n0x{x} vs 0x{x}\n0x{x} vs 0x{x}\n", .{
-        core.loadFromMemory(LongInteger, nativeInterface.MillisecondsTimestampAddress),
+        core.loadFromMemory(LongInteger, NativeInterface.MillisecondsTimestampAddress),
         compareMilli,
-        core.loadFromMemory(LongInteger, nativeInterface.MicrosecondsTimestampAddress),
+        core.loadFromMemory(LongInteger, NativeInterface.MicrosecondsTimestampAddress),
         compareMicro,
     });
     // store operations
-    core.storeToMemory(ByteOrdinal, nativeInterface.SerialIOAddress, 'A');
-    core.storeToMemory(Ordinal, nativeInterface.SerialIOAddress, 'A');
+    core.storeToMemory(ByteOrdinal, NativeInterface.SerialIOAddress, 'A');
+    core.storeToMemory(Ordinal, NativeInterface.SerialIOAddress, 'A');
     //core.storeToMemory(ByteOrdinal, 0xFE00_000C, 0);
     // only activate this one once I figure out a way to input data to standard in
     //try expect(core.loadFromMemory(Ordinal, 0xFE00_0008) != 0xFFFF_FFFF);
@@ -1978,12 +1971,9 @@ test "modify logic" {
     try expectEqual(modify(0xFF, 0xFFFF, 0), 0xFF);
 }
 test "core startup test" {
-    const allocator = std.heap.page_allocator;
-    const buffer = try allocator.create(MemoryPool);
-    defer allocator.destroy(buffer);
-    var core = Core{
-        .memory = buffer,
-    };
+    try NativeInterface.begin();
+    defer NativeInterface.end();
+    var core = Core{};
     // make a fake PRCB
     var bootWords = [8]Ordinal{
         0x600,

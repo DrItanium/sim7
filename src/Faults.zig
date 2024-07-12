@@ -20,7 +20,6 @@
 // ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 pub const FaultProcedureEntry = packed struct {
     @"procedure address": u32 = 0,
     @"segment selector": u32 = 0,
@@ -252,15 +251,15 @@ pub const FaultRecord = struct {
             else => false,
         };
     }
-    pub fn storeToMemory(self: *const FaultRecord, pool: *MemoryPool, address: Address) void {
-        store(Ordinal, pool, address, self.unused);
-        store(TripleOrdinal, pool, address + 4, self.@"override fault data");
-        store(TripleOrdinal, pool, address + 16, self.@"fault data");
-        store(Ordinal, pool, address + 28, self.@"override type".wholeValue());
-        store(Ordinal, pool, address + 32, self.@"process controls");
-        store(Ordinal, pool, address + 36, self.@"arithmetic controls");
-        store(Ordinal, pool, address + 40, self.@"fault type".wholeValue());
-        store(Ordinal, pool, address + 44, self.@"address of faulting instruction");
+    pub fn storeToMemory(self: *const FaultRecord, address: Address) void {
+        NativeInterface.store(Ordinal, address, self.unused);
+        NativeInterface.store(TripleOrdinal, address + 4, self.@"override fault data");
+        NativeInterface.store(TripleOrdinal, address + 16, self.@"fault data");
+        NativeInterface.store(Ordinal, address + 28, self.@"override type".wholeValue());
+        NativeInterface.store(Ordinal, address + 32, self.@"process controls");
+        NativeInterface.store(Ordinal, address + 36, self.@"arithmetic controls");
+        NativeInterface.store(Ordinal, address + 40, self.@"fault type".wholeValue());
+        NativeInterface.store(Ordinal, address + 44, self.@"address of faulting instruction");
     }
 };
 
@@ -306,13 +305,12 @@ test "test faults saving return addresses" {
 
 const std = @import("std");
 const coreTypes = @import("types.zig");
-const nativeInterface = @import("MemoryInterface.zig");
+const NativeInterface = @import("MemoryInterface.zig");
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const Ordinal = coreTypes.Ordinal;
 const TripleOrdinal = coreTypes.TripleOrdinal;
 const Address = coreTypes.Address;
 const MemoryPool = coreTypes.MemoryPool;
-const store = nativeInterface.store;
 const SegmentSelector = coreTypes.SegmentSelector;
 const LongOrdinal = coreTypes.LongOrdinal;

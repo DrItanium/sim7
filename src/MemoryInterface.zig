@@ -56,11 +56,33 @@ const io = std.io;
 const stdin = io.getStdIn().reader();
 const stdout = io.getStdOut().writer();
 
+const allocator = std.heap.page_allocator;
+var pool: *MemoryPool = undefined;
+var setup: bool = false;
+pub fn begin() !void {
+    if (!setup) {
+        setup = true;
+        pool = try allocator.create(MemoryPool);
+        for (pool) |*cell| {
+            cell.* = 0;
+        }
+    }
+}
+pub fn end() void {
+    allocator.destroy(pool);
+    setup = false;
+}
+// we only will ever have a single instance of this type
+pub fn setBackingStore(mem: *MemoryPool) void {
+    pool = mem;
+}
+pub fn getBackingStore() *MemoryPool {
+    return pool;
+}
 // need to access byte by byte so we can reconstruct in a platform independent
 // way
 fn memoryLoad(
     comptime T: type,
-    pool: *MemoryPool,
     address: Address,
 ) T {
     // todo, at some point we need to take platform endianness into account!
@@ -71,8 +93,8 @@ fn memoryLoad(
                 const properView: *[]ShortOrdinal = @ptrFromInt(@intFromPtr(&pool));
                 return @bitCast(properView.*[address >> 1]);
             } else {
-                const a: ShortOrdinal = load(ByteOrdinal, pool, address);
-                const b: ShortOrdinal = load(ByteOrdinal, pool, address +% 1);
+                const a: ShortOrdinal = load(ByteOrdinal, address);
+                const b: ShortOrdinal = load(ByteOrdinal, address +% 1);
                 return @bitCast(a | (b << 8));
             }
         },
@@ -81,8 +103,8 @@ fn memoryLoad(
                 const properView: *[]Ordinal = @ptrFromInt(@intFromPtr(&pool));
                 return @bitCast(properView.*[address >> 2]);
             } else {
-                const a: Ordinal = load(ShortOrdinal, pool, address);
-                const b: Ordinal = load(ShortOrdinal, pool, address +% 2);
+                const a: Ordinal = load(ShortOrdinal, address);
+                const b: Ordinal = load(ShortOrdinal, address +% 2);
                 return @bitCast(a | (b << 16));
             }
         },
@@ -91,8 +113,8 @@ fn memoryLoad(
                 const properView: *[]LongOrdinal = @ptrFromInt(@intFromPtr(&pool));
                 return @bitCast(properView.*[address >> 3]);
             } else {
-                const a: LongOrdinal = load(Ordinal, pool, address);
-                const b: LongOrdinal = load(Ordinal, pool, address +% 4);
+                const a: LongOrdinal = load(Ordinal, address);
+                const b: LongOrdinal = load(Ordinal, address +% 4);
                 return @bitCast(a | (b << 32));
             }
         },
@@ -117,9 +139,9 @@ fn memoryLoad(
             } else {
                 // load three separate ordinals, it may turn out that some of
                 // them are aligned actually!
-                const a: TripleOrdinal = load(Ordinal, pool, address);
-                const b: TripleOrdinal = load(Ordinal, pool, address +% 4);
-                const c: TripleOrdinal = load(Ordinal, pool, address +% 8);
+                const a: TripleOrdinal = load(Ordinal, address);
+                const b: TripleOrdinal = load(Ordinal, address +% 4);
+                const c: TripleOrdinal = load(Ordinal, address +% 8);
                 return a | (b << 32) | (c << 64);
             }
         },
@@ -151,17 +173,17 @@ fn memoryLoad(
             } else {
                 // load three separate ordinals, it may turn out that some of
                 // them are aligned actually!
-                const a: QuadOrdinal = load(Ordinal, pool, address);
-                const b: QuadOrdinal = load(Ordinal, pool, address +% 4);
-                const c: QuadOrdinal = load(Ordinal, pool, address +% 8);
-                const d: QuadOrdinal = load(Ordinal, pool, address +% 12);
+                const a: QuadOrdinal = load(Ordinal, address);
+                const b: QuadOrdinal = load(Ordinal, address +% 4);
+                const c: QuadOrdinal = load(Ordinal, address +% 8);
+                const d: QuadOrdinal = load(Ordinal, address +% 12);
                 return a | (b << 32) | (c << 64) | (d << 96);
             }
         },
-        FaultTableEntry => FaultTableEntry.make(load(LongOrdinal, pool, address)),
+        FaultTableEntry => FaultTableEntry.make(load(LongOrdinal, address)),
         GenericSegmentDescriptor => {
             var descriptor = GenericSegmentDescriptor{};
-            descriptor.setWholeValue(load(QuadOrdinal, pool, address));
+            descriptor.setWholeValue(load(QuadOrdinal, address));
             return descriptor;
         },
         else => @compileError("Requested type not allowed!"),
@@ -169,7 +191,6 @@ fn memoryLoad(
 }
 fn memoryStore(
     comptime T: type,
-    pool: *MemoryPool,
     address: Address,
     value: T,
 ) void {
@@ -191,8 +212,8 @@ fn memoryStore(
                 const properView: *[]Ordinal = @ptrFromInt(@intFromPtr(&pool));
                 properView.*[address >> 2] = view;
             } else {
-                store(ShortOrdinal, pool, address, @truncate(view));
-                store(ShortOrdinal, pool, address +% 2, @truncate(view >> 16));
+                store(ShortOrdinal, address, @truncate(view));
+                store(ShortOrdinal, address +% 2, @truncate(view >> 16));
             }
         },
         LongOrdinal, LongInteger => {
@@ -201,8 +222,8 @@ fn memoryStore(
                 const properView: *[]LongOrdinal = @ptrFromInt(@intFromPtr(&pool));
                 properView.*[address >> 3] = view;
             } else {
-                store(Ordinal, pool, address, @truncate(view));
-                store(Ordinal, pool, address +% 4, @truncate(view >> 32));
+                store(Ordinal, address, @truncate(view));
+                store(Ordinal, address +% 4, @truncate(view >> 32));
             }
         },
         TripleOrdinal => {
@@ -210,9 +231,9 @@ fn memoryStore(
                 const properView: *[]TripleOrdinal = @ptrFromInt(@intFromPtr(&pool));
                 properView.*[address >> 4] = value;
             } else {
-                store(Ordinal, pool, address, @truncate(value));
-                store(Ordinal, pool, address +% 4, @truncate(value >> 32));
-                store(Ordinal, pool, address +% 8, @truncate(value >> 64));
+                store(Ordinal, address, @truncate(value));
+                store(Ordinal, address +% 4, @truncate(value >> 32));
+                store(Ordinal, address +% 8, @truncate(value >> 64));
             }
         },
         QuadOrdinal => {
@@ -220,11 +241,11 @@ fn memoryStore(
                 const properView: *[]QuadOrdinal = @ptrFromInt(@intFromPtr(&pool));
                 properView.*[address >> 4] = value;
             } else {
-                store(LongOrdinal, pool, address, @truncate(value));
-                store(LongOrdinal, pool, address +% 8, @truncate(value >> 64));
+                store(LongOrdinal, address, @truncate(value));
+                store(LongOrdinal, address +% 8, @truncate(value >> 64));
             }
         },
-        *FaultRecord, *const FaultRecord, FaultRecord => value.storeToMemory(pool, address),
+        *FaultRecord, *const FaultRecord, FaultRecord => value.storeToMemory(address),
         else => @compileError("Requested type not supported!"),
     }
 }
@@ -245,11 +266,10 @@ pub const IOSpaceEnd = 0xFEFF_FFFF;
 
 fn loadFromIOMemory(
     comptime T: type,
-    pool: *MemoryPool,
     addr: Address,
 ) T {
     return switch (addr) {
-        IOSpaceMemoryUnderlayStart...IOSpaceMemoryUnderlayEnd => memoryLoad(T, pool, addr),
+        IOSpaceMemoryUnderlayStart...IOSpaceMemoryUnderlayEnd => memoryLoad(T, addr),
         CPUClockRateAddress => switch (T) {
             Ordinal, Integer => CPUClockRate,
             FaultTableEntry => FaultTableEntry.None,
@@ -313,12 +333,11 @@ fn loadFromIOMemory(
 }
 fn storeToIOMemory(
     comptime T: type,
-    pool: *MemoryPool,
     addr: Address,
     value: T,
 ) void {
     switch (addr) {
-        IOSpaceMemoryUnderlayStart...IOSpaceMemoryUnderlayEnd => memoryStore(T, pool, addr, value),
+        IOSpaceMemoryUnderlayStart...IOSpaceMemoryUnderlayEnd => memoryStore(T, addr, value),
         SerialIOAddress => {
             // putc
             switch (T) {
@@ -344,59 +363,56 @@ fn storeToIOMemory(
 }
 pub fn load(
     comptime T: type,
-    pool: *MemoryPool,
     address: Address,
 ) T {
     return switch (address) {
-        IOSpaceStart...IOSpaceEnd => loadFromIOMemory(T, pool, address),
-        else => memoryLoad(T, pool, address),
+        IOSpaceStart...IOSpaceEnd => loadFromIOMemory(T, address),
+        else => memoryLoad(T, address),
     };
 }
 pub fn store(
     comptime T: type,
-    pool: *MemoryPool,
     address: Address,
     value: T,
 ) void {
     switch (address) {
         // io space detection
-        IOSpaceStart...IOSpaceEnd => storeToIOMemory(T, pool, address, value),
-        else => memoryStore(T, pool, address, value),
+        IOSpaceStart...IOSpaceEnd => storeToIOMemory(T, address, value),
+        else => memoryStore(T, address, value),
     }
 }
 
 test "memory pool load/store test" {
-    const allocator = std.heap.page_allocator;
-    const buffer = try allocator.create(MemoryPool);
-    defer allocator.destroy(buffer);
-    buffer[0] = 0xED;
-    buffer[1] = 0xFD;
-    buffer[2] = 0xFF;
-    buffer[3] = 0xFF;
-    buffer[4] = 0xab;
-    buffer[5] = 0xcd;
-    buffer[6] = 0xef;
-    buffer[7] = 0x01;
-    buffer[8] = 0x23;
-    buffer[9] = 0x45;
-    buffer[10] = 0x67;
-    buffer[11] = 0x89;
-    store(Ordinal, buffer, 12, 0x44332211);
-    store(LongOrdinal, buffer, 16, 0xccbbaa99_88776655);
-    store(ShortOrdinal, buffer, 24, 0xeedd);
-    store(ByteOrdinal, buffer, 26, 0xff);
-    try expectEqual(load(ByteOrdinal, buffer, 16), 0x55);
-    try expectEqual(load(ByteOrdinal, buffer, 0), 0xED);
-    try expectEqual(load(ByteOrdinal, buffer, 1), 0xFD);
-    try expectEqual(load(ByteInteger, buffer, 2), -1);
-    try expectEqual(load(ShortOrdinal, buffer, 0), 0xFDED);
-    try expectEqual(load(ShortInteger, buffer, 2), -1);
-    try expectEqual(load(ShortOrdinal, buffer, 2), 0xFFFF);
-    try expectEqual(load(Ordinal, buffer, 0), 0xFFFFFDED);
-    try expectEqual(load(TripleOrdinal, buffer, 0), 0x89674523_01efcdab_ffffFDED);
-    try expectEqual(load(TripleOrdinal, buffer, 1), 0x1189674523_01efcdab_ffffFD);
-    try expectEqual(load(TripleOrdinal, buffer, 2), 0x221189674523_01efcdab_ffff);
-    try expectEqual(load(QuadOrdinal, buffer, 0), 0x44332211_89674523_01efcdab_ffffFDED);
-    try expectEqual(load(QuadOrdinal, buffer, 1), 0x55443322_11896745_2301efcd_abffffFD);
-    try expectEqual(load(ShortOrdinal, buffer, 24), 0xeedd);
+    defer end();
+    try begin();
+    pool[0] = 0xED;
+    pool[1] = 0xFD;
+    pool[2] = 0xFF;
+    pool[3] = 0xFF;
+    pool[4] = 0xab;
+    pool[5] = 0xcd;
+    pool[6] = 0xef;
+    pool[7] = 0x01;
+    pool[8] = 0x23;
+    pool[9] = 0x45;
+    pool[10] = 0x67;
+    pool[11] = 0x89;
+    store(Ordinal, 12, 0x44332211);
+    store(LongOrdinal, 16, 0xccbbaa99_88776655);
+    store(ShortOrdinal, 24, 0xeedd);
+    store(ByteOrdinal, 26, 0xff);
+    try expectEqual(load(ByteOrdinal, 16), 0x55);
+    try expectEqual(load(ByteOrdinal, 0), 0xED);
+    try expectEqual(load(ByteOrdinal, 1), 0xFD);
+    try expectEqual(load(ByteInteger, 2), -1);
+    try expectEqual(load(ShortOrdinal, 0), 0xFDED);
+    try expectEqual(load(ShortInteger, 2), -1);
+    try expectEqual(load(ShortOrdinal, 2), 0xFFFF);
+    try expectEqual(load(Ordinal, 0), 0xFFFFFDED);
+    try expectEqual(load(TripleOrdinal, 0), 0x89674523_01efcdab_ffffFDED);
+    try expectEqual(load(TripleOrdinal, 1), 0x1189674523_01efcdab_ffffFD);
+    try expectEqual(load(TripleOrdinal, 2), 0x221189674523_01efcdab_ffff);
+    try expectEqual(load(QuadOrdinal, 0), 0x44332211_89674523_01efcdab_ffffFDED);
+    try expectEqual(load(QuadOrdinal, 1), 0x55443322_11896745_2301efcd_abffffFD);
+    try expectEqual(load(ShortOrdinal, 24), 0xeedd);
 }
