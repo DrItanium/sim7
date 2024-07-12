@@ -1736,7 +1736,7 @@ fn alterbit(src: Ordinal, bitpos: Ordinal, clearBit: bool) Ordinal {
 pub fn main() !void {
     //std.debug.print("i960 Simulator\n", .{});
     // allocate all of the memory at once
-    NativeInterface.begin();
+    try NativeInterface.begin();
     defer NativeInterface.end();
     var core = Core{};
     // part of the system tests

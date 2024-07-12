@@ -57,8 +57,13 @@ const stdin = io.getStdIn().reader();
 const stdout = io.getStdOut().writer();
 
 const allocator = std.heap.page_allocator;
+// we only will ever have a single instance of this so make it a singleton and
+// hide the contents
 var pool: *MemoryPool = undefined;
 var setup: bool = false;
+pub fn available() bool {
+    return setup;
+}
 pub fn begin() !void {
     if (!setup) {
         setup = true;
@@ -71,13 +76,6 @@ pub fn begin() !void {
 pub fn end() void {
     allocator.destroy(pool);
     setup = false;
-}
-// we only will ever have a single instance of this type
-pub fn setBackingStore(mem: *MemoryPool) void {
-    pool = mem;
-}
-pub fn getBackingStore() *MemoryPool {
-    return pool;
 }
 // need to access byte by byte so we can reconstruct in a platform independent
 // way
