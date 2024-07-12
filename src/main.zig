@@ -1766,12 +1766,6 @@ test "io system test" {
     try expectEqual(core.loadFromMemory(Ordinal, NativeInterface.SystemClockRateAddress), NativeInterface.SystemClockRate);
     try expect(core.loadFromMemory(LongInteger, NativeInterface.MillisecondsTimestampAddress) >= compareMilli);
     try expect(core.loadFromMemory(LongInteger, NativeInterface.MicrosecondsTimestampAddress) >= compareMicro);
-    std.debug.print("\n\n0x{x} vs 0x{x}\n0x{x} vs 0x{x}\n", .{
-        core.loadFromMemory(LongInteger, NativeInterface.MillisecondsTimestampAddress),
-        compareMilli,
-        core.loadFromMemory(LongInteger, NativeInterface.MicrosecondsTimestampAddress),
-        compareMicro,
-    });
     // store operations
     core.storeToMemory(ByteOrdinal, NativeInterface.SerialIOAddress, 'A');
     core.storeToMemory(Ordinal, NativeInterface.SerialIOAddress, 'A');
