@@ -1229,25 +1229,21 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
                 ((src1 & 0x00FF0000) == (src2 & 0x00FF0000)) or
                 ((src1 & 0xFF000000) == (src2 & 0xFF000000))) 0b010 else 0b000;
         },
-        DecodedOpcode.setbit => {
+        DecodedOpcode.clrbit,
+        DecodedOpcode.notbit,
+        DecodedOpcode.chkbit,
+        DecodedOpcode.setbit,
+        => |x| {
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
             const bitpos: Ordinal = Core.computeBitpos(core.extractSrc1(u5, instruction) catch unreachable);
             const src = core.extractSrc2(Ordinal, instruction) catch unreachable;
-            core.setRegisterValue(instruction.getSrcDest() catch unreachable, src | bitpos);
-        },
-        DecodedOpcode.clrbit => {
-            const bitpos: Ordinal = Core.computeBitpos(core.extractSrc1(u5, instruction) catch unreachable);
-            const src = core.extractSrc2(Ordinal, instruction) catch unreachable;
-            core.setRegisterValue(instruction.getSrcDest() catch unreachable, src & (~bitpos));
-        },
-        DecodedOpcode.notbit => {
-            const bitpos: Ordinal = Core.computeBitpos(core.extractSrc1(u5, instruction) catch unreachable);
-            const src = core.extractSrc2(Ordinal, instruction) catch unreachable;
-            core.setRegisterValue(instruction.getSrcDest() catch unreachable, src ^ bitpos);
-        },
-        DecodedOpcode.chkbit => {
-            const bitpos: Ordinal = Core.computeBitpos(core.extractSrc1(u5, instruction) catch unreachable);
-            const src = core.extractSrc2(Ordinal, instruction) catch unreachable;
-            core.ac.@"condition code" = if ((src & bitpos) == 0) 0b000 else 0b010;
+            switch (comptime x) {
+                DecodedOpcode.clrbit => core.setRegisterValue(srcDestIndex, src & (~bitpos)),
+                DecodedOpcode.notbit => core.setRegisterValue(srcDestIndex, src ^ bitpos),
+                DecodedOpcode.setbit => core.setRegisterValue(srcDestIndex, src | bitpos),
+                DecodedOpcode.chkbit => core.ac.@"condition code" = if ((src & bitpos) == 0) 0b000 else 0b010,
+                else => unreachable,
+            }
         },
         DecodedOpcode.cmpo,
         DecodedOpcode.cmpdeco,
