@@ -780,7 +780,7 @@ const Core = struct {
         self.getRegister(index).* = value;
     }
     fn getRegisterValue(self: *Core, index: Operand) Ordinal {
-        return self.getRegister(index).*;
+        return self.extractValueFromGPR(Ordinal, index) catch unreachable;
     }
     fn getTripleRegisterValue(self: *Core, index: Operand) Faults!TripleOrdinal {
         if ((index & 0b11) != 0) {
@@ -1041,6 +1041,16 @@ const Core = struct {
     }
     fn computeNextFrameFaultBase(stackPointer: Ordinal) Ordinal {
         return (stackPointer + (C * 3)) & NotC;
+    }
+    fn extractValueFromGPR(self: *Core, comptime T: type, index: Operand) !T {
+        return switch (T) {
+            Ordinal => self.getRegister(index).*,
+            Integer => @bitCast(self.getRegister(index).*),
+            LongOrdinal => self.getLongRegisterValue(index),
+            TripleOrdinal => self.getTripleRegisterValue(index),
+            QuadOrdinal => self.getQuadRegisterValue(index),
+            else => @compileError("Unsupported type for extraction!"),
+        };
     }
 };
 fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
