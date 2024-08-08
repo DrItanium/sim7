@@ -1233,6 +1233,7 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
         DecodedOpcode.notbit,
         DecodedOpcode.chkbit,
         DecodedOpcode.setbit,
+        DecodedOpcode.alterbit,
         => |x| {
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
             const bitpos: Ordinal = Core.computeBitpos(core.extractSrc1(u5, instruction) catch unreachable);
@@ -1242,6 +1243,7 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
                 DecodedOpcode.notbit => core.setRegisterValue(srcDestIndex, src ^ bitpos),
                 DecodedOpcode.setbit => core.setRegisterValue(srcDestIndex, src | bitpos),
                 DecodedOpcode.chkbit => core.ac.@"condition code" = if ((src & bitpos) == 0) 0b000 else 0b010,
+                DecodedOpcode.alterbit => core.setRegisterValue(srcDestIndex, alterbit(src, bitpos, (core.ac.@"condition code" & 0b010) == 0)),
                 else => unreachable,
             }
         },
@@ -1333,14 +1335,6 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
             const src: Ordinal = core.extractSrc2(Ordinal, instruction) catch unreachable;
             const srcDest = core.getRegisterValue(srcDestIndex);
             core.setRegisterValue(srcDestIndex, modify(mask, src, srcDest));
-        },
-        DecodedOpcode.alterbit => {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
-            const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const bitpos: Ordinal = Core.computeBitpos(@truncate((if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
-            const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
-            core.setRegisterValue(srcDestIndex, alterbit(src, bitpos, (core.ac.@"condition code" & 0b010) == 0));
         },
         DecodedOpcode.syncf => try core.syncf(),
         DecodedOpcode.movl => try core.setLongRegisterValue(instruction.getSrcDest() catch unreachable, try core.extractSrc1(LongOrdinal, instruction)),
