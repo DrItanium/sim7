@@ -1279,13 +1279,12 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
         DecodedOpcode.cmpdeci,
         DecodedOpcode.cmpinci,
         => |op| {
-            const srcDestIndex = instruction.getSrcDest() catch unreachable;
             const src1 = core.extractSrc1(Integer, instruction) catch unreachable;
             const src2 = core.extractSrc2(Integer, instruction) catch unreachable;
             core.ac.@"condition code" = if (src1 < src2) 0b100 else if (src1 == src2) 0b010 else 0b001;
             switch (op) {
-                DecodedOpcode.cmpdeci => core.setRegisterValue(srcDestIndex, @bitCast(src2 -% 1)),
-                DecodedOpcode.cmpinci => core.setRegisterValue(srcDestIndex, @bitCast(src2 +% 1)),
+                DecodedOpcode.cmpdeci => core.setRegisterValue(instruction.getSrcDest() catch unreachable, @bitCast(src2 -% 1)),
+                DecodedOpcode.cmpinci => core.setRegisterValue(instruction.getSrcDest() catch unreachable, @bitCast(src2 +% 1)),
                 else => {},
             }
         },
@@ -1363,27 +1362,9 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
             core.setRegisterValue(srcDestIndex, alterbit(src, bitpos, (core.ac.@"condition code" & 0b010) == 0));
         },
         DecodedOpcode.syncf => try core.syncf(),
-        DecodedOpcode.movl => {
-            // be as simple as possible
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const srcValue: LongOrdinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else try core.getLongRegisterValue(src1Index);
-            try core.setLongRegisterValue(srcDestIndex, srcValue);
-        },
-        DecodedOpcode.movt => {
-            // be as simple as possible
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const srcValue: TripleOrdinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else try core.getTripleRegisterValue(src1Index);
-            try core.setTripleRegisterValue(srcDestIndex, srcValue);
-        },
-        DecodedOpcode.movq => {
-            // be as simple as possible
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const srcValue: QuadOrdinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else try core.getQuadRegisterValue(src1Index);
-            try core.setQuadRegisterValue(srcDestIndex, srcValue);
-        },
+        DecodedOpcode.movl => try core.setLongRegisterValue(instruction.getSrcDest() catch unreachable, try core.extractSrc1(LongOrdinal, instruction)),
+        DecodedOpcode.movt => try core.setTripleRegisterValue(instruction.getSrcDest() catch unreachable, try core.extractSrc1(TripleOrdinal, instruction)),
+        DecodedOpcode.movq => try core.setQuadRegisterValue(instruction.getSrcDest() catch unreachable, try core.extractSrc1(QuadOrdinal, instruction)),
         DecodedOpcode.divo => {
             const src1Index = instruction.getSrc1() catch unreachable;
             const src2Index = instruction.getSrc2() catch unreachable;
