@@ -1475,7 +1475,6 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
             }
         },
         DecodedOpcode.addc => {
-            const srcDestIndex = instruction.getSrcDest() catch unreachable;
             const src1 = core.extractSrc1(Ordinal, instruction) catch unreachable;
             const src2 = core.extractSrc2(Ordinal, instruction) catch unreachable;
             const carryBit: Ordinal = if ((core.ac.@"condition code" & 0b010) != 0) 1 else 0;
@@ -1485,7 +1484,7 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
             const src2TopBit = src2 & 0x8000_0000;
             const src1TopBit = src1 & 0x8000_0000;
             const destTopBit = finalOutput[0] & 0x8000_0000;
-            core.setRegisterValue(srcDestIndex, finalOutput[0]);
+            core.setRegisterValue(instruction.getSrcDest() catch unreachable, finalOutput[0]);
             var cc: u3 = 0b000;
             // compute if an integer overflow would have taken place
             cc |= if ((src2TopBit == src1TopBit) and (src2TopBit != destTopBit)) 0b001 else 0b000;
@@ -1545,10 +1544,9 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
         },
         DecodedOpcode.fill => {
             const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
             const dst: Ordinal = core.getRegisterValue(src1Index);
-            const value: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            const value: Ordinal = core.extractSrc2(Ordinal, instruction) catch unreachable;
             const len: Ordinal = if (instruction.reg.treatSrcDestAsLiteral()) srcDestIndex else core.getRegisterValue(srcDestIndex);
             core.ac.@"condition code" = 0b010;
             for (0..((len / 4) - 1)) |i| {
@@ -1596,21 +1594,17 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
                 }
             }
         },
-        DecodedOpcode.remo => {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
-            const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const denominator: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
-            const numerator: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
-
-            core.setRegisterValue(srcDestIndex, try math.rem(Ordinal, numerator, denominator));
-        },
+        DecodedOpcode.remo => core.setRegisterValue(
+            instruction.getSrcDest() catch unreachable,
+            try math.rem(
+                Ordinal,
+                core.extractSrc2(Ordinal, instruction) catch unreachable,
+                core.extractSrc1(Ordinal, instruction) catch unreachable,
+            ),
+        ),
         DecodedOpcode.remi => {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
-            const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const denominator: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index));
-            const numerator: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index));
+            const denominator = core.extractSrc1(Integer, instruction) catch unreachable;
+            const numerator = core.extractSrc2(Integer, instruction) catch unreachable;
             // @todo implement support for Integer Overflow (which the Hx docs
             // state does not generate an overflow fault)
             //
@@ -1625,7 +1619,7 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
                 error.Overflow => 0,
                 else => return x,
             }) * denominator;
-            core.setRegisterValue(srcDestIndex, @bitCast(dest));
+            core.setRegisterValue(instruction.getSrcDest() catch unreachable, @bitCast(dest));
         },
         DecodedOpcode.extract => {
             const src1Index = instruction.getSrc1() catch unreachable;
