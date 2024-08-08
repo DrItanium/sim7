@@ -1259,13 +1259,12 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
         DecodedOpcode.cmpdeco,
         DecodedOpcode.cmpinco,
         => |op| {
-            const srcDestIndex = instruction.getSrcDest() catch unreachable;
             const src1 = core.extractSrc1(Ordinal, instruction) catch unreachable;
             const src2 = core.extractSrc2(Ordinal, instruction) catch unreachable;
             core.ac.@"condition code" = if (src1 < src2) 0b100 else if (src1 == src2) 0b010 else 0b001;
             switch (op) {
-                DecodedOpcode.cmpdeco => core.setRegisterValue(srcDestIndex, src2 -% 1),
-                DecodedOpcode.cmpinco => core.setRegisterValue(srcDestIndex, src2 +% 1),
+                DecodedOpcode.cmpdeco => core.setRegisterValue(instruction.getSrcDest() catch unreachable, src2 -% 1),
+                DecodedOpcode.cmpinco => core.setRegisterValue(instruction.getSrcDest() catch unreachable, src2 +% 1),
                 else => {},
             }
         },
@@ -1339,11 +1338,9 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
             }));
         },
         DecodedOpcode.modify => {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const mask: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
-            const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            const mask: Ordinal = core.extractSrc1(Ordinal, instruction) catch unreachable;
+            const src: Ordinal = core.extractSrc2(Ordinal, instruction) catch unreachable;
             const srcDest = core.getRegisterValue(srcDestIndex);
             core.setRegisterValue(srcDestIndex, modify(mask, src, srcDest));
         },
@@ -1360,11 +1357,9 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
         DecodedOpcode.movt => try core.setTripleRegisterValue(instruction.getSrcDest() catch unreachable, try core.extractSrc1(TripleOrdinal, instruction)),
         DecodedOpcode.movq => try core.setQuadRegisterValue(instruction.getSrcDest() catch unreachable, try core.extractSrc1(QuadOrdinal, instruction)),
         DecodedOpcode.divo => {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const denominator: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
-            const numerator: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            const denominator: Ordinal = core.extractSrc1(Ordinal, instruction) catch unreachable;
+            const numerator: Ordinal = core.extractSrc2(Ordinal, instruction) catch unreachable;
             core.setRegisterValue(srcDestIndex, math.divTrunc(Ordinal, numerator, denominator) catch |err| {
                 core.nextInstruction();
                 return err;
@@ -1397,26 +1392,19 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
         DecodedOpcode.ldos => core.setRegisterValue(instruction.getSrcDest() catch unreachable, core.loadFromMemory(ShortOrdinal, try core.computeEffectiveAddress(instruction))),
         DecodedOpcode.ld => core.setRegisterValue(instruction.getSrcDest() catch unreachable, core.loadFromMemory(Ordinal, try core.computeEffectiveAddress(instruction))),
         DecodedOpcode.ldib => {
-            const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const efa = try core.computeEffectiveAddress(instruction);
-            const upgradedValue: Integer = core.loadFromMemory(ByteInteger, efa);
-            core.setRegisterValue(srcDestIndex, @bitCast(upgradedValue));
+            const upgradedValue: Integer = core.loadFromMemory(ByteInteger, try core.computeEffectiveAddress(instruction));
+            core.setRegisterValue(instruction.getSrcDest() catch unreachable, @bitCast(upgradedValue));
         },
         DecodedOpcode.ldis => {
-            const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const efa = try core.computeEffectiveAddress(instruction);
-            const upgradedValue: Integer = core.loadFromMemory(ShortInteger, efa);
-            core.setRegisterValue(srcDestIndex, @bitCast(upgradedValue));
+            const upgradedValue: Integer = core.loadFromMemory(ShortInteger, try core.computeEffectiveAddress(instruction));
+            core.setRegisterValue(instruction.getSrcDest() catch unreachable, @bitCast(upgradedValue));
         },
         DecodedOpcode.ldl => try core.setLongRegisterValue(instruction.getSrcDest() catch unreachable, core.loadFromMemory(LongOrdinal, try core.computeEffectiveAddress(instruction))),
         DecodedOpcode.ldt => try core.setTripleRegisterValue(instruction.getSrcDest() catch unreachable, core.loadFromMemory(TripleOrdinal, try core.computeEffectiveAddress(instruction))),
         DecodedOpcode.ldq => try core.setQuadRegisterValue(instruction.getSrcDest() catch unreachable, core.loadFromMemory(QuadOrdinal, try core.computeEffectiveAddress(instruction))),
         DecodedOpcode.modi => {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
-            const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const denominator: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index));
-            const numerator: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index));
+            const denominator: Integer = core.extractSrc1(Integer, instruction) catch unreachable;
+            const numerator: Integer = core.extractSrc2(Integer, instruction) catch unreachable;
             if (denominator == 0) {
                 return error.DivisionByZero;
             }
@@ -1424,7 +1412,7 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
             if ((numerator * denominator) < 0) {
                 newDest += denominator;
             }
-            core.setRegisterValue(srcDestIndex, @bitCast(newDest));
+            core.setRegisterValue(instruction.getSrcDest() catch unreachable, @bitCast(newDest));
         },
         DecodedOpcode.selno,
         DecodedOpcode.selg,
