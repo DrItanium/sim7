@@ -1067,6 +1067,11 @@ const Core = struct {
             else => Faults.IllegalOperand,
         };
     }
+    fn flushRegisters(self: *Core) void {
+        for (&self.locals) |*x| {
+            x.relinquishOwnership(self);
+        }
+    }
 };
 fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
     switch (try instruction.getOpcode()) {
@@ -1096,11 +1101,7 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
             core.setRegisterValue(LinkRegister, core.ip + core.advanceBy);
             core.relativeBranch(i24, instruction.ctrl.getDisplacement());
         },
-        DecodedOpcode.balx => {
-            const targ = try core.computeEffectiveAddress(instruction);
-            const dest = instruction.getSrcDest() catch unreachable;
-            core.balx(targ, dest);
-        },
+        DecodedOpcode.balx => core.balx(try core.computeEffectiveAddress(instruction), instruction.getSrcDest() catch unreachable),
         DecodedOpcode.calls => {
             const targ: Ordinal = core.extractSrc1(Ordinal, instruction) catch unreachable;
             if (targ > 259) {
@@ -1132,10 +1133,8 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
             core.enterCall(fp);
             core.setupNewFrameInternals(copy.toWholeValue(), tmp);
         },
-        DecodedOpcode.bno => {
-            if (core.ac.@"condition code" == 0b000) {
-                core.relativeBranch(i24, instruction.ctrl.getDisplacement());
-            }
+        DecodedOpcode.bno => if (core.ac.@"condition code" == 0b000) {
+            core.relativeBranch(i24, instruction.ctrl.getDisplacement());
         },
         DecodedOpcode.bg,
         DecodedOpcode.be,
@@ -1144,16 +1143,11 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
         DecodedOpcode.bne,
         DecodedOpcode.ble,
         DecodedOpcode.bo,
-        => |opcode| {
-            if ((opcode.getConditionCode() & core.ac.@"condition code") != 0) {
-                core.relativeBranch(i24, instruction.ctrl.getDisplacement());
-            }
+        => |opcode| if ((opcode.getConditionCode() & core.ac.@"condition code") != 0) {
+            core.relativeBranch(i24, instruction.ctrl.getDisplacement());
         },
-
-        DecodedOpcode.faultno => {
-            if (core.ac.@"condition code" == 0) {
-                return Faults.ConstraintRange;
-            }
+        DecodedOpcode.faultno => if (core.ac.@"condition code" == 0) {
+            return Faults.ConstraintRange;
         },
         DecodedOpcode.faultg,
         DecodedOpcode.faulte,
@@ -1641,11 +1635,7 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
                 core.setRegisterValue(srcDestIndex, (srcDest >> @truncate(bitpos)) & (~(@as(Ordinal, 0xFFFF_FFFF) << @truncate(len))));
             }
         },
-        DecodedOpcode.flushreg => {
-            for (&core.locals) |*x| {
-                x.relinquishOwnership(core);
-            }
-        },
+        DecodedOpcode.flushreg => core.flushRegisters(),
         DecodedOpcode.ret => try core.ret(),
 
         else => return Faults.Unimplemented,
