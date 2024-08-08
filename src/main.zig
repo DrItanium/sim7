@@ -1377,11 +1377,10 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
             });
         },
         DecodedOpcode.divi => {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const denominator: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index));
-            const numerator: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index));
+            const denominator: Integer = core.extractSrc1(Integer, instruction) catch unreachable;
+            const numerator: Integer = core.extractSrc2(Integer, instruction) catch unreachable;
+
             core.setRegisterValue(srcDestIndex, @bitCast(math.divTrunc(Integer, numerator, denominator) catch |err| switch (err) {
                 error.Overflow => {
                     core.setRegisterValue(srcDestIndex, @bitCast(@as(Integer, math.minInt(Integer))));
@@ -1399,23 +1398,14 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
                 },
             }));
         },
-        DecodedOpcode.lda => {
-            const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            core.setRegisterValue(srcDestIndex, try core.computeEffectiveAddress(instruction));
-        },
-        DecodedOpcode.ldob => {
-            const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            core.setRegisterValue(srcDestIndex, core.loadFromMemory(ByteOrdinal, try core.computeEffectiveAddress(instruction)));
-        },
+        DecodedOpcode.lda => core.setRegisterValue(instruction.getSrcDest() catch unreachable, try core.computeEffectiveAddress(instruction)),
+        DecodedOpcode.ldob => core.setRegisterValue(instruction.getSrcDest() catch unreachable, core.loadFromMemory(ByteOrdinal, try core.computeEffectiveAddress(instruction))),
+        DecodedOpcode.ldos => core.setRegisterValue(instruction.getSrcDest() catch unreachable, core.loadFromMemory(ShortOrdinal, try core.computeEffectiveAddress(instruction))),
         DecodedOpcode.ldib => {
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
             const efa = try core.computeEffectiveAddress(instruction);
             const upgradedValue: Integer = core.loadFromMemory(ByteInteger, efa);
             core.setRegisterValue(srcDestIndex, @bitCast(upgradedValue));
-        },
-        DecodedOpcode.ldos => {
-            const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            core.setRegisterValue(srcDestIndex, core.loadFromMemory(ShortOrdinal, try core.computeEffectiveAddress(instruction)));
         },
         DecodedOpcode.ldis => {
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
