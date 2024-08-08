@@ -1059,6 +1059,13 @@ const Core = struct {
             else => Faults.IllegalOperand,
         };
     }
+    fn extractSrc2(self: *Core, comptime T: type, instruction: Instruction) !T {
+        return switch (instruction) {
+            .reg => |k| if (k.treatSrc2AsLiteral()) k.src2 else self.extractValueFromGPR(T, k.src2),
+            .cobr => |k| self.extractValueFromGPR(T, k.src2),
+            else => Faults.IllegalOperand,
+        };
+    }
 };
 fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
     switch (try instruction.getOpcode()) {
@@ -1172,9 +1179,8 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
             // branch if bit clear
             const displacement = instruction.cobr.getDisplacement();
             const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
             const bitpos: Ordinal = Core.computeBitpos(@truncate((if (instruction.cobr.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
-            const src = core.getRegisterValue(src2Index);
+            const src: Ordinal = core.extractSrc2(Ordinal, instruction) catch unreachable;
             if ((src & bitpos) == 0) {
                 core.ac.@"condition code" = 0b010;
                 core.relativeBranch(@TypeOf(displacement), displacement);
@@ -1188,9 +1194,8 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
             // branch if bit set
             const displacement = instruction.cobr.getDisplacement();
             const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
             const bitpos: Ordinal = Core.computeBitpos(@truncate((if (instruction.cobr.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
-            const src = core.getRegisterValue(src2Index);
+            const src: Ordinal = core.extractSrc2(Ordinal, instruction) catch unreachable;
             if ((src & bitpos) != 0) {
                 core.ac.@"condition code" = 0b010;
                 core.relativeBranch(@TypeOf(displacement), displacement);
@@ -1200,11 +1205,9 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
             }
         },
         DecodedOpcode.emul => {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const src1: LongOrdinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
-            const src2: LongOrdinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            const src1: LongOrdinal = core.extractSrc1(Ordinal, instruction) catch unreachable;
+            const src2: LongOrdinal = core.extractSrc2(Ordinal, instruction) catch unreachable;
             try core.setLongRegisterValue(srcDestIndex, src2 *% src1);
         },
         DecodedOpcode.ediv => {
@@ -1212,26 +1215,20 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
             if ((srcDestIndex & 0b1) != 0) {
                 return Faults.InvalidOpcode;
             }
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
-            const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
-            const src2: LongOrdinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else try core.getLongRegisterValue(src2Index);
+            const src1 = core.extractSrc1(Ordinal, instruction) catch unreachable;
+            const src2 = core.extractSrc2(LongOrdinal, instruction) catch unreachable;
             core.setRegisterValue(srcDestIndex, @truncate(try math.rem(LongOrdinal, src2, src1)));
             core.setRegisterValue(srcDestIndex + 1, @truncate(try math.divTrunc(LongOrdinal, src2, src1)));
         },
         DecodedOpcode.rotate => {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const len: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
-            const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            const len = core.extractSrc1(Ordinal, instruction) catch unreachable;
+            const src = core.extractSrc2(Ordinal, instruction) catch unreachable;
             core.setRegisterValue(srcDestIndex, math.rotl(Ordinal, src, len & 0b11111));
         },
         DecodedOpcode.scanbyte => {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
-            const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
-            const src2: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            const src1 = core.extractSrc1(Ordinal, instruction) catch unreachable;
+            const src2 = core.extractSrc2(Ordinal, instruction) catch unreachable;
             core.ac.@"condition code" = if (((src1 & 0x000000FF) == (src2 & 0x000000FF)) or
                 ((src1 & 0x0000FF00) == (src2 & 0x0000FF00)) or
                 ((src1 & 0x00FF0000) == (src2 & 0x00FF0000)) or
@@ -1239,44 +1236,38 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
         },
         DecodedOpcode.setbit => {
             const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
             const bitpos: Ordinal = Core.computeBitpos(@truncate((if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
-            const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            const src = core.extractSrc2(Ordinal, instruction) catch unreachable;
             core.setRegisterValue(srcDestIndex, src | bitpos);
         },
         DecodedOpcode.clrbit => {
             const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
             const bitpos: Ordinal = Core.computeBitpos(@truncate((if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
-            const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            const src = core.extractSrc2(Ordinal, instruction) catch unreachable;
             core.setRegisterValue(srcDestIndex, src & (~bitpos));
         },
         DecodedOpcode.notbit => {
             const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
             const bitpos: Ordinal = Core.computeBitpos(@truncate((if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
-            const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            const src = core.extractSrc2(Ordinal, instruction) catch unreachable;
             core.setRegisterValue(srcDestIndex, src ^ bitpos);
         },
         DecodedOpcode.chkbit => {
             const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
             const bitpos: Ordinal = Core.computeBitpos(@truncate((if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index)) & 0b11111)); // bitpos mod 32
-            const src: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            const src = core.extractSrc2(Ordinal, instruction) catch unreachable;
             core.ac.@"condition code" = if ((src & bitpos) == 0) 0b000 else 0b010;
         },
         DecodedOpcode.cmpo,
         DecodedOpcode.cmpdeco,
         DecodedOpcode.cmpinco,
         => |op| {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
-            const src2: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            const src1 = core.extractSrc1(Ordinal, instruction) catch unreachable;
+            const src2 = core.extractSrc2(Ordinal, instruction) catch unreachable;
             core.ac.@"condition code" = if (src1 < src2) 0b100 else if (src1 == src2) 0b010 else 0b001;
             switch (op) {
                 DecodedOpcode.cmpdeco => core.setRegisterValue(srcDestIndex, src2 -% 1),
@@ -1288,11 +1279,9 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
         DecodedOpcode.cmpdeci,
         DecodedOpcode.cmpinci,
         => |op| {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const src1: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index));
-            const src2: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index));
+            const src1 = core.extractSrc1(Integer, instruction) catch unreachable;
+            const src2 = core.extractSrc2(Integer, instruction) catch unreachable;
             core.ac.@"condition code" = if (src1 < src2) 0b100 else if (src1 == src2) 0b010 else 0b001;
             switch (op) {
                 DecodedOpcode.cmpdeci => core.setRegisterValue(srcDestIndex, @bitCast(src2 -% 1)),
@@ -1317,11 +1306,9 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
         DecodedOpcode.addo,
         DecodedOpcode.mov,
         => |operation| {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
-            const src2: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            const src1 = core.extractSrc1(Ordinal, instruction) catch unreachable;
+            const src2 = core.extractSrc2(Ordinal, instruction) catch unreachable;
             // aliases
             const len = src1;
             const src = src2;
@@ -1348,11 +1335,9 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
         DecodedOpcode.addi,
         DecodedOpcode.muli,
         => |operation| {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const src1: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index));
-            const src2: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src1Index else core.getRegisterValue(src2Index));
+            const src1 = core.extractSrc1(Integer, instruction) catch unreachable;
+            const src2 = core.extractSrc2(Integer, instruction) catch unreachable;
             // support detecting integer overflow here
             core.setRegisterValue(srcDestIndex, @bitCast(switch (comptime operation) {
                 DecodedOpcode.addi => try math.add(Integer, src2, src1),
@@ -1500,11 +1485,9 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
         DecodedOpcode.selle,
         DecodedOpcode.selo,
         => |op| {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
-            const src2: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            const src1 = core.extractSrc1(Ordinal, instruction) catch unreachable;
+            const src2 = core.extractSrc2(Ordinal, instruction) catch unreachable;
             const cc = core.ac.@"condition code";
             const mask = op.getConditionCode();
             core.setRegisterValue(srcDestIndex, if (((mask & cc) != 0) or (mask == cc)) src2 else src1);
@@ -1518,11 +1501,9 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
         DecodedOpcode.addole,
         DecodedOpcode.addoo,
         => |op| {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
-            const src2: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            const src1 = core.extractSrc1(Ordinal, instruction) catch unreachable;
+            const src2 = core.extractSrc2(Ordinal, instruction) catch unreachable;
             const cc = core.ac.@"condition code";
             const mask = op.getConditionCode();
             if (((mask & cc) != 0) or (mask == cc)) {
@@ -1538,11 +1519,9 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
         DecodedOpcode.addile,
         DecodedOpcode.addio,
         => |op| {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const src1: Integer = @bitCast(if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index));
-            const src2: Integer = @bitCast(if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index));
+            const src1 = core.extractSrc1(Integer, instruction) catch unreachable;
+            const src2 = core.extractSrc2(Integer, instruction) catch unreachable;
             const cc = core.ac.@"condition code";
             const mask = op.getConditionCode();
             if (((mask & cc) != 0) or (mask == cc)) {
@@ -1559,11 +1538,9 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
             }
         },
         DecodedOpcode.addc => {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const src2Index = instruction.getSrc2() catch unreachable;
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
-            const src1: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
-            const src2: Ordinal = if (instruction.reg.treatSrc2AsLiteral()) src2Index else core.getRegisterValue(src2Index);
+            const src1 = core.extractSrc1(Ordinal, instruction) catch unreachable;
+            const src2 = core.extractSrc2(Ordinal, instruction) catch unreachable;
             const carryBit: Ordinal = if ((core.ac.@"condition code" & 0b010) != 0) 1 else 0;
             const partialCombination = @addWithOverflow(src2, src1);
             const finalOutput = @addWithOverflow(partialCombination[0], carryBit);
