@@ -1056,7 +1056,7 @@ const Core = struct {
         return switch (instruction) {
             .reg => |k| if (k.treatSrc1AsLiteral()) k.src1 else self.extractValueFromGPR(T, k.src1),
             .cobr => |k| if (k.treatSrc1AsLiteral()) k.src1 else self.extractValueFromGPR(T, k.src1),
-            else => @compileError("no src1 to extract!"),
+            else => Faults.IllegalOperand,
         };
     }
 };
@@ -1094,8 +1094,7 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
             core.balx(targ, dest);
         },
         DecodedOpcode.calls => {
-            const src1Index = instruction.getSrc1() catch unreachable;
-            const targ: Ordinal = if (instruction.reg.treatSrc1AsLiteral()) src1Index else core.getRegisterValue(src1Index);
+            const targ: Ordinal = core.extractSrc1(Ordinal, instruction) catch unreachable;
             if (targ > 259) {
                 return Faults.SegmentLength;
             }
