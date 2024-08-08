@@ -1052,6 +1052,13 @@ const Core = struct {
             else => @compileError("Unsupported type for extraction!"),
         };
     }
+    fn extractSrc1(self: *Core, comptime T: type, instruction: Instruction) !T {
+        return switch (instruction) {
+            .reg => |k| if (k.treatSrc1AsLiteral()) k.src1 else self.extractValueFromGPR(T, k.src1),
+            .cobr => |k| if (k.treatSrc1AsLiteral()) k.src1 else self.extractValueFromGPR(T, k.src1),
+            else => @compileError("no src1 to extract!"),
+        };
+    }
 };
 fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
     switch (try instruction.getOpcode()) {
