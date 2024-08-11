@@ -1229,11 +1229,11 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
                 ((src1 & 0x00FF0000) == (src2 & 0x00FF0000)) or
                 ((src1 & 0xFF000000) == (src2 & 0xFF000000))) 0b010 else 0b000;
         },
-        DecodedOpcode.clrbit,
         DecodedOpcode.notbit,
-        DecodedOpcode.chkbit,
         DecodedOpcode.setbit,
+        DecodedOpcode.clrbit,
         DecodedOpcode.alterbit,
+        DecodedOpcode.chkbit,
         => |x| {
             const srcDestIndex = instruction.getSrcDest() catch unreachable;
             const bitpos: Ordinal = Core.computeBitpos(core.extractSrc1(u5, instruction) catch unreachable);
@@ -1244,7 +1244,111 @@ fn processInstruction(core: *Core, instruction: Instruction) Faults!void {
                 DecodedOpcode.setbit => core.setRegisterValue(srcDestIndex, src | bitpos),
                 DecodedOpcode.chkbit => core.ac.@"condition code" = if ((src & bitpos) == 0) 0b000 else 0b010,
                 DecodedOpcode.alterbit => core.setRegisterValue(srcDestIndex, alterbit(src, bitpos, (core.ac.@"condition code" & 0b010) == 0)),
-                else => unreachable,
+                else => return Faults.Unimplemented,
+            }
+        },
+        DecodedOpcode.scanbit => {
+            const src = core.extractSrc1(Ordinal, instruction) catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            // scan for bit
+            //
+            // search for the most significant set bit
+            core.ac.@"condition code" = 0b000;
+            core.setRegisterValue(srcDestIndex, 0xFFFF_FFFF);
+            const patterns: [32]Ordinal = [32]Ordinal{
+                Core.computeBitpos(0b11111),
+                Core.computeBitpos(0b11110),
+                Core.computeBitpos(0b11101),
+                Core.computeBitpos(0b11100),
+                Core.computeBitpos(0b11011),
+                Core.computeBitpos(0b11010),
+                Core.computeBitpos(0b11001),
+                Core.computeBitpos(0b11000),
+                Core.computeBitpos(0b10111),
+                Core.computeBitpos(0b10110),
+                Core.computeBitpos(0b10101),
+                Core.computeBitpos(0b10100),
+                Core.computeBitpos(0b10011),
+                Core.computeBitpos(0b10010),
+                Core.computeBitpos(0b10001),
+                Core.computeBitpos(0b10000),
+                Core.computeBitpos(0b01111),
+                Core.computeBitpos(0b01110),
+                Core.computeBitpos(0b01101),
+                Core.computeBitpos(0b01100),
+                Core.computeBitpos(0b01011),
+                Core.computeBitpos(0b01010),
+                Core.computeBitpos(0b01001),
+                Core.computeBitpos(0b01000),
+                Core.computeBitpos(0b00111),
+                Core.computeBitpos(0b00110),
+                Core.computeBitpos(0b00101),
+                Core.computeBitpos(0b00100),
+                Core.computeBitpos(0b00011),
+                Core.computeBitpos(0b00010),
+                Core.computeBitpos(0b00001),
+                Core.computeBitpos(0b00000),
+            };
+            for (patterns, 0..) |mask, index| {
+                const baseIndex: Ordinal = @truncate(index);
+                const actualIndex: Ordinal = 31 - baseIndex;
+                if ((src & mask) != 0) {
+                    core.ac.@"condition code" = 0b010;
+                    core.setRegisterValue(srcDestIndex, actualIndex);
+                    break;
+                }
+            }
+        },
+        DecodedOpcode.spanbit => {
+            const src = core.extractSrc1(Ordinal, instruction) catch unreachable;
+            const srcDestIndex = instruction.getSrcDest() catch unreachable;
+            // scan for bit
+            //
+            // search for the most significant set bit
+            core.ac.@"condition code" = 0b000;
+            core.setRegisterValue(srcDestIndex, 0xFFFF_FFFF);
+            const patterns: [32]Ordinal = [32]Ordinal{
+                Core.computeBitpos(0b11111),
+                Core.computeBitpos(0b11110),
+                Core.computeBitpos(0b11101),
+                Core.computeBitpos(0b11100),
+                Core.computeBitpos(0b11011),
+                Core.computeBitpos(0b11010),
+                Core.computeBitpos(0b11001),
+                Core.computeBitpos(0b11000),
+                Core.computeBitpos(0b10111),
+                Core.computeBitpos(0b10110),
+                Core.computeBitpos(0b10101),
+                Core.computeBitpos(0b10100),
+                Core.computeBitpos(0b10011),
+                Core.computeBitpos(0b10010),
+                Core.computeBitpos(0b10001),
+                Core.computeBitpos(0b10000),
+                Core.computeBitpos(0b01111),
+                Core.computeBitpos(0b01110),
+                Core.computeBitpos(0b01101),
+                Core.computeBitpos(0b01100),
+                Core.computeBitpos(0b01011),
+                Core.computeBitpos(0b01010),
+                Core.computeBitpos(0b01001),
+                Core.computeBitpos(0b01000),
+                Core.computeBitpos(0b00111),
+                Core.computeBitpos(0b00110),
+                Core.computeBitpos(0b00101),
+                Core.computeBitpos(0b00100),
+                Core.computeBitpos(0b00011),
+                Core.computeBitpos(0b00010),
+                Core.computeBitpos(0b00001),
+                Core.computeBitpos(0b00000),
+            };
+            for (patterns, 0..) |mask, index| {
+                const baseIndex: Ordinal = @truncate(index);
+                const actualIndex: Ordinal = 31 - baseIndex;
+                if ((src & mask) == 0) {
+                    core.ac.@"condition code" = 0b010;
+                    core.setRegisterValue(srcDestIndex, actualIndex);
+                    break;
+                }
             }
         },
         DecodedOpcode.cmpo,

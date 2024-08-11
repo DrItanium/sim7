@@ -93,3 +93,25 @@ test "add/subtract index test" {
     ind = ind +% 1;
     try expectEqual(ind, 0b00);
 }
+
+test "count leading zeros" {
+    const v0: u32 = 0xFFFF_FFFF;
+    const v1: u32 = 0;
+    try expectEqual(@clz(v0), 0);
+    try expectEqual(@clz(v0 >> 1), 1);
+    try expectEqual(@clz(v0 >> 2), 2);
+    try expectEqual(@clz(v0 >> 3), 3);
+    try expectEqual(31 - @clz(v0), 31);
+    try expectEqual(31 - @clz(v0 >> 1), 30);
+    try expectEqual(31 - @clz(v0 >> 2), 29);
+    try expectEqual(31 - @clz(v0 >> 3), 28);
+    try expectEqual(31 - @clz(v0 >> 4), 27);
+
+    try expectEqual(@clz(v1), 32);
+    for (0..31) |ind| {
+        const val: u32 = @truncate(ind);
+        const shift: u5 = @truncate(ind);
+        try expectEqual(@clz(v0 >> shift), val);
+        try expectEqual(31 - @clz(v0 >> shift), 31 - val);
+    }
+}
